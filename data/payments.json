@@ -1,0 +1,54 @@
+{
+    "payments": [
+        {
+            "payment_id": "PAY001",
+            "bill_id": "BILL001",
+            "patient_id": "PAT001",
+            "amount": 330.00,
+            "method": "Credit Card",
+            "status": "Success",
+            "transaction_details": {
+                "transaction_id": "TXN789012",
+                "card_type": "Visa",
+                "card_last4": "4532",
+                "authorization_code": "AUTH123",
+                "response_code": "00",
+                "response_message": "Approved"
+            },
+            "processed_at": "2025-10-25T15:30:00"
+        },
+        {
+            "payment_id": "PAY002",
+            "bill_id": "BILL002",
+            "patient_id": "PAT002",
+            "amount": 550.00,
+            "method": "QR Code",
+            "status": "Success",
+            "transaction_details": {
+                "transaction_id": "TXN789013",
+                "reference": "UPI789013",
+                "upi_id": "user@bank",
+                "response_code": "00",
+                "response_message": "Success"
+            },
+            "processed_at": "2025-10-26T12:45:00"
+        },
+        {
+            "payment_id": "PAY003",
+            "bill_id": "BILL003",
+            "patient_id": "PAT003",
+            "amount": 275.50,
+            "method": "Debit Card",
+            "status": "Success",
+            "transaction_details": {
+                "transaction_id": "TXN789014",
+                "card_type": "Mastercard",
+                "card_last4": "8901",
+                "authorization_code": "AUTH124",
+                "response_code": "00",
+                "response_message": "Approved"
+            },
+            "processed_at": "2025-10-26T14:20:00"
+        }
+    ]
+}

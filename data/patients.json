@@ -1,0 +1,83 @@
+{
+    "patients": [
+        {
+            "id": "PAT001",
+            "personal_info": {
+                "name": "John Smith",
+                "date_of_birth": "1980-05-15",
+                "gender": "Male",
+                "blood_group": "O+",
+                "contact": {
+                    "phone": "555-0201",
+                    "email": "john.smith@email.com",
+                    "address": "123 Main St, Anytown",
+                    "emergency_contact": {
+                        "name": "Mary Smith",
+                        "relation": "Wife",
+                        "phone": "555-0202"
+                    }
+                },
+                "insurance": {
+                    "provider": "Health Insurance Co",
+                    "policy_number": "HIC123456",
+                    "valid_until": "2026-12-31"
+                }
+            },
+            "medical_history": {
+                "allergies": ["Penicillin", "Peanuts"],
+                "chronic_conditions": ["Hypertension"],
+                "past_surgeries": [
+                    {
+                        "procedure": "Appendectomy",
+                        "date": "2020-03-15",
+                        "hospital": "General Hospital",
+                        "surgeon": "Dr. James Wilson"
+                    }
+                ],
+                "family_history": {
+                    "father": ["Diabetes"],
+                    "mother": ["Hypertension"],
+                    "siblings": ["None"]
+                }
+            },
+            "created_at": "2025-01-15",
+            "last_updated": "2025-10-27"
+        },
+        {
+            "id": "PAT002",
+            "personal_info": {
+                "name": "Sarah Johnson",
+                "date_of_birth": "1992-08-23",
+                "gender": "Female",
+                "blood_group": "A+",
+                "contact": {
+                    "phone": "555-0203",
+                    "email": "sarah.j@email.com",
+                    "address": "456 Oak Avenue, Anytown",
+                    "emergency_contact": {
+                        "name": "Robert Johnson",
+                        "relation": "Father",
+                        "phone": "555-0204"
+                    }
+                },
+                "insurance": {
+                    "provider": "Medicare Plus",
+                    "policy_number": "MP789012",
+                    "valid_until": "2026-08-31"
+                }
+            },
+            "medical_history": {
+                "allergies": ["Aspirin"],
+                "chronic_conditions": ["Asthma"],
+                "past_surgeries": [],
+                "family_history": {
+                    "father": ["None"],
+                    "mother": ["Asthma"],
+                    "siblings": ["Asthma"]
+                }
+            },
+            "created_at": "2025-02-20",
+            "last_updated": "2025-10-27"
+        }
+    ]
+}

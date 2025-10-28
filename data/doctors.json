@@ -1,0 +1,112 @@
+{
+    "doctors": [
+        {
+            "id": "DOC001",
+            "name": "Dr. Sarah Johnson",
+            "specialization": "Cardiology",
+            "qualifications": "MD, DM Cardiology",
+            "experience": "15 years",
+            "availability": {
+                "days": ["Monday", "Tuesday", "Wednesday", "Friday"],
+                "timing": "09:00 AM - 05:00 PM"
+            },
+            "contact": {
+                "email": "sarah.johnson@hospital.com",
+                "phone": "555-0101"
+            },
+            "consultation_fee": 150.00,
+            "department": "Cardiology",
+            "room_no": "301"
+        },
+        {
+            "id": "DOC002",
+            "name": "Dr. Michael Chen",
+            "specialization": "Neurology",
+            "qualifications": "MD, DM Neurology",
+            "experience": "12 years",
+            "availability": {
+                "days": ["Monday", "Wednesday", "Thursday", "Saturday"],
+                "timing": "10:00 AM - 06:00 PM"
+            },
+            "contact": {
+                "email": "michael.chen@hospital.com",
+                "phone": "555-0102"
+            },
+            "consultation_fee": 180.00,
+            "department": "Neurology",
+            "room_no": "402"
+        },
+        {
+            "id": "DOC003",
+            "name": "Dr. Emily Martinez",
+            "specialization": "Pediatrics",
+            "qualifications": "MD, DCH",
+            "experience": "10 years",
+            "availability": {
+                "days": ["Tuesday", "Wednesday", "Friday", "Saturday"],
+                "timing": "09:00 AM - 04:00 PM"
+            },
+            "contact": {
+                "email": "emily.martinez@hospital.com",
+                "phone": "555-0103"
+            },
+            "consultation_fee": 120.00,
+            "department": "Pediatrics",
+            "room_no": "201"
+        },
+        {
+            "id": "DOC004",
+            "name": "Dr. James Wilson",
+            "specialization": "Orthopedics",
+            "qualifications": "MS Orthopedics",
+            "experience": "18 years",
+            "availability": {
+                "days": ["Monday", "Tuesday", "Thursday", "Friday"],
+                "timing": "10:00 AM - 05:00 PM"
+            },
+            "contact": {
+                "email": "james.wilson@hospital.com",
+                "phone": "555-0104"
+            },
+            "consultation_fee": 160.00,
+            "department": "Orthopedics",
+            "room_no": "501"
+        },
+        {
+            "id": "DOC005",
+            "name": "Dr. Sophia Patel",
+            "specialization": "Gynecology",
+            "qualifications": "MD, DNB Gynecology",
+            "experience": "14 years",
+            "availability": {
+                "days": ["Monday", "Wednesday", "Friday", "Saturday"],
+                "timing": "09:30 AM - 04:30 PM"
+            },
+            "contact": {
+                "email": "sophia.patel@hospital.com",
+                "phone": "555-0105"
+            },
+            "consultation_fee": 140.00,
+            "department": "Gynecology",
+            "room_no": "401"
+        },
+        {
+            "id": "DOC006",
+            "name": "Dr. Robert Thompson",
+            "specialization": "General Medicine",
+            "qualifications": "MD Internal Medicine",
+            "experience": "20 years",
+            "availability": {
+                "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+                "timing": "09:00 AM - 06:00 PM"
+            },
+            "contact": {
+                "email": "robert.thompson@hospital.com",
+                "phone": "555-0106"
+            },
+            "consultation_fee": 130.00,
+            "department": "General Medicine",
+            "room_no": "101"
+        }
+    ]
+}

@@ -1,0 +1,99 @@
+{
+    "bills": [
+        {
+            "bill_id": "BILL001",
+            "patient_id": "PAT001",
+            "visit_id": "VIS001",
+            "date": "2025-10-25",
+            "items": [
+                {
+                    "description": "Consultation Fee",
+                    "amount": 150.00,
+                    "category": "Professional Fees"
+                },
+                {
+                    "description": "Complete Blood Count",
+                    "amount": 75.00,
+                    "category": "Laboratory"
+                },
+                {
+                    "description": "Sumatriptan 50mg",
+                    "amount": 45.00,
+                    "category": "Pharmacy"
+                },
+                {
+                    "description": "Propranolol 40mg",
+                    "amount": 30.00,
+                    "category": "Pharmacy"
+                }
+            ],
+            "subtotal": 300.00,
+            "tax": 30.00,
+            "total": 330.00,
+            "payment": {
+                "method": "Credit Card",
+                "transaction_id": "TXN789012",
+                "paid_amount": 330.00,
+                "paid_date": "2025-10-25T15:30:00",
+                "card_type": "Visa",
+                "card_last4": "4532"
+            },
+            "status": "Paid",
+            "insurance": {
+                "provider": "Health Insurance Co",
+                "policy_number": "HIC123456",
+                "coverage_amount": 250.00,
+                "patient_responsibility": 80.00
+            },
+            "created_at": "2025-10-25T14:30:00",
+            "updated_at": "2025-10-25T15:30:00"
+        },
+        {
+            "bill_id": "BILL002",
+            "patient_id": "PAT002",
+            "visit_id": "VIS002",
+            "date": "2025-10-26",
+            "items": [
+                {
+                    "description": "Emergency Consultation",
+                    "amount": 250.00,
+                    "category": "Professional Fees"
+                },
+                {
+                    "description": "Spirometry Test",
+                    "amount": 150.00,
+                    "category": "Laboratory"
+                },
+                {
+                    "description": "Albuterol Inhaler",
+                    "amount": 65.00,
+                    "category": "Pharmacy"
+                },
+                {
+                    "description": "Prednisone 20mg",
+                    "amount": 35.00,
+                    "category": "Pharmacy"
+                }
+            ],
+            "subtotal": 500.00,
+            "tax": 50.00,
+            "total": 550.00,
+            "payment": {
+                "method": "QR Code",
+                "transaction_id": "TXN789013",
+                "paid_amount": 550.00,
+                "paid_date": "2025-10-26T12:45:00",
+                "reference": "UPI789013"
+            },
+            "status": "Paid",
+            "insurance": {
+                "provider": "Medicare Plus",
+                "policy_number": "MP789012",
+                "coverage_amount": 400.00,
+                "patient_responsibility": 150.00
+            },
+            "created_at": "2025-10-26T12:00:00",
+            "updated_at": "2025-10-26T12:45:00"
+        }
+    ]
+}

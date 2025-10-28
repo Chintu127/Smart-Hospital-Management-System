@@ -1,0 +1,88 @@
+{
+    "patient_visits": [
+        {
+            "visit_id": "VIS001",
+            "patient_id": "PAT001",
+            "date": "2025-10-25",
+            "doctor_id": "DOC001",
+            "type": "Regular Checkup",
+            "vitals": {
+                "temperature": "98.6",
+                "blood_pressure": "120/80",
+                "heart_rate": "72",
+                "respiratory_rate": "16",
+                "weight": "75",
+                "height": "175"
+            },
+            "symptoms": [
+                "Headache",
+                "Fatigue"
+            ],
+            "diagnosis": "Stress-induced migraine",
+            "prescription": {
+                "medicines": [
+                    {
+                        "name": "Sumatriptan",
+                        "dosage": "50mg",
+                        "frequency": "As needed",
+                        "duration": "1 month"
+                    },
+                    {
+                        "name": "Propranolol",
+                        "dosage": "40mg",
+                        "frequency": "Once daily",
+                        "duration": "1 month"
+                    }
+                ],
+                "instructions": "Take rest, avoid stress, maintain regular sleep schedule"
+            },
+            "followup": {
+                "required": true,
+                "date": "2025-11-25",
+                "notes": "Review medication effectiveness"
+            }
+        },
+        {
+            "visit_id": "VIS002",
+            "patient_id": "PAT002",
+            "date": "2025-10-26",
+            "doctor_id": "DOC003",
+            "type": "Emergency",
+            "vitals": {
+                "temperature": "100.2",
+                "blood_pressure": "110/70",
+                "heart_rate": "88",
+                "respiratory_rate": "20",
+                "weight": "65",
+                "height": "165"
+            },
+            "symptoms": [
+                "Wheezing",
+                "Shortness of breath"
+            ],
+            "diagnosis": "Acute asthma exacerbation",
+            "prescription": {
+                "medicines": [
+                    {
+                        "name": "Albuterol inhaler",
+                        "dosage": "2 puffs",
+                        "frequency": "Every 4-6 hours as needed",
+                        "duration": "1 month"
+                    },
+                    {
+                        "name": "Prednisone",
+                        "dosage": "20mg",
+                        "frequency": "Once daily",
+                        "duration": "5 days"
+                    }
+                ],
+                "instructions": "Avoid triggers, use peak flow meter, follow asthma action plan"
+            },
+            "followup": {
+                "required": true,
+                "date": "2025-11-02",
+                "notes": "Review asthma control"
+            }
+        }
+    ]
+}

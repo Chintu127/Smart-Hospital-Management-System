@@ -1,0 +1,80 @@
+{
+    "lab_reports": [
+        {
+            "report_id": "LAB001",
+            "patient_id": "PAT001",
+            "visit_id": "VIS001",
+            "doctor_id": "DOC001",
+            "date": "2025-10-25",
+            "type": "Blood Test",
+            "category": "Complete Blood Count",
+            "parameters": [
+                {
+                    "name": "Hemoglobin",
+                    "value": "14.5",
+                    "unit": "g/dL",
+                    "reference_range": "13.5-17.5",
+                    "status": "Normal"
+                },
+                {
+                    "name": "White Blood Cells",
+                    "value": "7500",
+                    "unit": "cells/mcL",
+                    "reference_range": "4500-11000",
+                    "status": "Normal"
+                },
+                {
+                    "name": "Platelets",
+                    "value": "250000",
+                    "unit": "/mcL",
+                    "reference_range": "150000-450000",
+                    "status": "Normal"
+                }
+            ],
+            "technician": "Lab Tech 1",
+            "verified_by": "Dr. Smith",
+            "notes": "All parameters within normal range",
+            "status": "Completed",
+            "created_at": "2025-10-25T10:30:00",
+            "updated_at": "2025-10-25T14:15:00"
+        },
+        {
+            "report_id": "LAB002",
+            "patient_id": "PAT002",
+            "visit_id": "VIS002",
+            "doctor_id": "DOC003",
+            "date": "2025-10-26",
+            "type": "Spirometry",
+            "category": "Pulmonary Function Test",
+            "parameters": [
+                {
+                    "name": "FEV1",
+                    "value": "2.5",
+                    "unit": "L",
+                    "reference_range": "≥ 80% predicted",
+                    "status": "Below Normal"
+                },
+                {
+                    "name": "FVC",
+                    "value": "3.8",
+                    "unit": "L",
+                    "reference_range": "≥ 80% predicted",
+                    "status": "Normal"
+                },
+                {
+                    "name": "FEV1/FVC",
+                    "value": "65",
+                    "unit": "%",
+                    "reference_range": "≥ 70%",
+                    "status": "Below Normal"
+                }
+            ],
+            "technician": "Lab Tech 2",
+            "verified_by": "Dr. Johnson",
+            "notes": "Results consistent with moderate asthma",
+            "status": "Completed",
+            "created_at": "2025-10-26T11:00:00",
+            "updated_at": "2025-10-26T13:45:00"
+        }
+    ]
+}
