@@ -388,7 +388,7 @@ You can set a default UPI ID used when the app needs to generate a payment QR. C
 
 ```
 {
-   "upi_id": "7013968958@fam"
+   "upi_id": "9999999999@fam"
 }
 ```
 
