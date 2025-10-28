@@ -2883,7 +2883,7 @@ class LabModule:
         title_frame = tk.Frame(self.parent, bg='white')
         title_frame.pack(fill='x', padx=20, pady=20)
         
-        tk.Label(title_frame, text="💵 Billing Management", font=('Arial', 20, 'bold'),
+        tk.Label(title_frame, text="LAB REPORT", font=('Arial', 20, 'bold'),
                 bg='white', fg='#2c3e50').pack(side='left')
         
         btn_frame = tk.Frame(title_frame, bg='white')
@@ -3032,6 +3032,7 @@ class LabModule:
             patient_id = patient_var.get().split(' - ')[0]
             patient_name = patient_var.get().split(' - ')[1]
             
+            payment_method = payment_var.get()
             bill_data = {
                 'bill_no': new_bill_no,
                 'patient_id': patient_id,
@@ -3040,25 +3041,60 @@ class LabModule:
                 'subtotal': subtotal,
                 'tax': tax,
                 'total': total,
-                'payment_method': payment_var.get(),
+                'payment_method': payment_method,
                 'date': datetime.now().strftime("%Y-%m-%d"),
-                'status': 'Paid'
+                'status': 'Pending'
             }
             
-            self.data_manager.add_bill(bill_data)
+            # Create receipts folder if it doesn't exist
+            receipts_path = os.path.join(os.path.dirname(__file__), 'receipts')
+            os.makedirs(receipts_path, exist_ok=True)
             
-            # Generate PDF
-            self.generate_bill_pdf(bill_data)
-            
-            # Get downloads folder path for message
-            if os.name == 'nt':  # Windows
-                downloads_path = os.path.expanduser('~\\Downloads')
-            else:  # Unix/Linux/Mac
-                downloads_path = os.path.expanduser('~/Downloads')
+            def finalize_payment():
+                bill_data['status'] = 'Paid'
+                self.data_manager.add_bill(bill_data)
                 
-            messagebox.showinfo("Success", f"Bill {new_bill_no} created successfully!\nPDF saved to {downloads_path}")
-            dialog.destroy()
-            self.load_bills()
+                # Generate and save receipt PDF
+                receipt_file = os.path.join(receipts_path, f"receipt_{new_bill_no}.pdf")
+                self.generate_bill_pdf(bill_data)
+                
+                # Save a copy to the receipts folder
+                if os.name == 'nt':  # Windows
+                    downloads_path = os.path.expanduser('~\\Downloads')
+                else:  # Unix/Linux/Mac
+                    downloads_path = os.path.expanduser('~/Downloads')
+                    
+                import shutil
+                shutil.copy2(os.path.join(downloads_path, f"bill_{bill_data['bill_no']}.pdf"), receipt_file)
+                
+                messagebox.showinfo("Success", f"Bill {new_bill_no} created successfully!\nReceipt saved to receipts folder")
+                dialog.destroy()
+                self.load_bills()
+            
+            # Handle different payment methods
+            if payment_method == 'Cash':
+                # For cash, directly show receipt
+                finalize_payment()
+            else:
+                # For card/other payments, show payment confirmation dialog
+                payment_dialog = tk.Toplevel(dialog)
+                payment_dialog.title("Payment Confirmation")
+                payment_dialog.geometry("300x150")
+                payment_dialog.transient(dialog)
+                
+                tk.Label(payment_dialog, text=f"Complete {payment_method} payment\nAmount: ₹{total:.2f}", 
+                        font=('Arial', 12), justify='center').pack(pady=20)
+                
+                tk.Button(payment_dialog, text="✔️ Done", font=('Arial', 11, 'bold'),
+                         bg='#2ecc71', fg='white', command=lambda: [payment_dialog.destroy(), finalize_payment()],
+                         padx=20, pady=10).pack()
+                
+                # Center the payment dialog
+                payment_dialog.update_idletasks()
+                x = dialog.winfo_x() + (dialog.winfo_width() // 2) - (payment_dialog.winfo_width() // 2)
+                y = dialog.winfo_y() + (dialog.winfo_height() // 2) - (payment_dialog.winfo_height() // 2)
+                payment_dialog.geometry(f"+{x}+{y}")
+                payment_dialog.grab_set()
         
         tk.Button(btn_frame, text="💾 Save & Generate PDF", font=('Arial', 11, 'bold'),
                  bg='#2ecc71', fg='white', relief='flat', cursor='hand2',
@@ -3204,9 +3240,9 @@ class LabModule:
         # Amounts
         amounts_data = [
             ['', 'Amount'],
-            ['Subtotal:', f"${bill_data['subtotal']:.2f}"],
-            ['Tax (10%):', f"${bill_data['tax']:.2f}"],
-            ['Total:', f"${bill_data['total']:.2f}"],
+            ['Subtotal:', f"₹{bill_data['subtotal']:.2f}"],
+            ['Tax (10%):', f"₹{bill_data['tax']:.2f}"],
+            ['Total:', f"₹{bill_data['total']:.2f}"],
         ]
         t = Table(amounts_data, colWidths=[200, 100])
         t.setStyle(TableStyle([
@@ -3287,9 +3323,9 @@ class LabModule:
                            f"Bill No: {bill['bill_no']}\n"
                            f"Patient: {bill['patient_name']}\n"
                            f"Services: {bill['services']}\n"
-                           f"Subtotal: ${bill['subtotal']:.2f}\n"
-                           f"Tax: ${bill['tax']:.2f}\n"
-                           f"Total: ${bill['total']:.2f}\n"
+                           f"Subtotal: ₹{bill['subtotal']:.2f}\n"
+                           f"Tax: ₹{bill['tax']:.2f}\n"
+                           f"Total: ₹{bill['total']:.2f}\n"
                            f"Payment: {bill['payment_method']}\n"
                            f"Date: {bill['date']}\n"
                            f"Status: {bill['status']}")
