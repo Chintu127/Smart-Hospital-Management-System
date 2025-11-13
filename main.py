@@ -356,6 +356,19 @@ class DataManager:
         self.billing_undo_stack.push(('add', bill))
         bills.append(bill)
         self.save_data(self.billing_file, bills)
+
+    def update_bill(self, bill):
+        """Update an existing bill by bill_no; if not present, add it."""
+        bills = self.get_bills()
+        for i, b in enumerate(bills):
+            if b.get('bill_no') == bill.get('bill_no'):
+                bills[i].update(bill)
+                self.save_data(self.billing_file, bills)
+                return True
+        # Not found -> append
+        bills.append(bill)
+        self.save_data(self.billing_file, bills)
+        return True
     
     def undo_last_bill(self):
         """Undo last billing operation using Stack"""
@@ -722,6 +735,7 @@ class MainDashboard:
                 {'text': 'Pharmacy', 'icon': '💊', 'command': lambda: self.load_module('pharmacy')},
                 {'text': 'Lab Reports', 'icon': '🔬', 'command': lambda: self.load_module('lab')},
                 {'text': 'Billing', 'icon': '💵', 'command': lambda: self.load_module('billing')},
+                {'text': 'Bill Reports', 'icon': '📄', 'command': lambda: self.load_module('bill_reports')},
                 {'text': 'Analytics', 'icon': '📈', 'command': lambda: self.load_module('analytics')},
                 {'text': 'Emergency', 'icon': '🚑', 'command': lambda: self.load_module('emergency')},
             ]
@@ -731,6 +745,7 @@ class MainDashboard:
                 {'text': 'Patients', 'icon': '🏥', 'command': lambda: self.load_module('patients')},
                 {'text': 'Appointments', 'icon': '📅', 'command': lambda: self.load_module('appointments')},
                 {'text': 'Billing', 'icon': '💵', 'command': lambda: self.load_module('billing')},
+                {'text': 'Bill Reports', 'icon': '📄', 'command': lambda: self.load_module('bill_reports')},
                 {'text': 'Emergency', 'icon': '🚑', 'command': lambda: self.load_module('emergency')},
             ]
         elif role == 'doctor':
@@ -787,6 +802,8 @@ class MainDashboard:
             LabModule(self.content_frame, self.data_manager, self.user)
         elif module_name == 'billing':
             BillingModule(self.content_frame, self.data_manager, self.user)
+        elif module_name == 'bill_reports':
+            BillReportsModule(self.content_frame, self.data_manager, self.user)
         elif module_name == 'analytics':
             AnalyticsModule(self.content_frame, self.data_manager, self.user)
         elif module_name == 'emergency':
@@ -857,7 +874,7 @@ class DashboardModule:
             {'title': 'Total Patients', 'value': len(patients), 'icon': '🏥', 'color': '#3498db'},
             {'title': 'Doctors', 'value': len(doctors), 'icon': '👨‍⚕️', 'color': '#2ecc71'},
             {'title': 'Today Appointments', 'value': len(today_appointments), 'icon': '📅', 'color': '#e74c3c'},
-            {'title': 'Total Revenue', 'value': f'${total_revenue:,.2f}', 'icon': '💰', 'color': '#f39c12'}
+            {'title': 'Total Revenue', 'value': f'₹{total_revenue:,.2f}', 'icon': '💰', 'color': '#f39c12'}
         ]
         
         for stat in stats:
@@ -2127,7 +2144,7 @@ class PharmacyModule:
             ("Medicine Name", "name", r"^[A-Za-z0-9\s\-]{3,50}$"),
             ("Category", "category", r"^[A-Za-z\s]{3,30}$"),
             ("Stock Quantity", "stock", r"^\d+$"),
-            ("Price ($)", "price", r"^\d*\.?\d*$")
+            ("Price (₹)", "price", r"^\d*\.?\d*$")
         ]
         
         for label, key, pattern in field_list:
@@ -2343,7 +2360,7 @@ class PharmacyModule:
             ('ID', medicine['id']),
             ('Category', medicine['category']),
             ('Stock', medicine['stock']),
-            ('Price', f"${medicine['price']:.2f}"),
+            ('Price', f"₹{medicine['price']:.2f}"),
             ('Description', medicine.get('description', 'N/A'))
         ]
         
@@ -2374,6 +2391,8 @@ class PharmacyModule:
             menu.post(event.x_root, event.y_root)
 
 class LabModule:
+    """Laboratory Management Module for managing lab tests and reports"""
+    
     def __init__(self, parent, data_manager, user):
         self.parent = parent
         self.data_manager = data_manager
@@ -2394,222 +2413,108 @@ class LabModule:
         
         tk.Button(btn_frame, text="➕ New Report", font=('Arial', 10, 'bold'),
                  bg='#2ecc71', fg='white', relief='flat', cursor='hand2',
-                 command=self.add_report, padx=15, pady=8).pack(side='left', padx=5)
+                 command=self.create_report, padx=15, pady=8).pack(side='left', padx=5)
         
         tk.Button(btn_frame, text="🔄 Refresh", font=('Arial', 10, 'bold'),
                  bg='#3498db', fg='white', relief='flat', cursor='hand2',
                  command=self.load_reports, padx=15, pady=8).pack(side='left', padx=5)
         
-        # Search frame
-        search_frame = tk.Frame(self.parent, bg='white')
-        search_frame.pack(fill='x', padx=20, pady=10)
-        
-        tk.Label(search_frame, text="🔍 Search:", font=('Arial', 11),
-                bg='white').pack(side='left', padx=(0, 10))
-        
-        self.search_var = tk.StringVar()
-        self.search_var.trace('w', lambda *args: self.search_reports())
-        
-        search_entry = tk.Entry(search_frame, textvariable=self.search_var,
-                              font=('Arial', 11), width=40)
-        search_entry.pack(side='left')
-        
-        # Patient filter combobox to show reports for a specific patient
-        patients = self.data_manager.get_patients()
-        patient_list = ['All'] + [f"{p['id']} - {p['name']}" for p in patients]
-        self.patient_filter_var = tk.StringVar(value='All')
-        patient_filter_cb = ttk.Combobox(search_frame, textvariable=self.patient_filter_var,
-                                         values=patient_list, state='readonly', width=30)
-        patient_filter_cb.pack(side='right', padx=(10,0))
-        patient_filter_cb.bind('<<ComboboxSelected>>', lambda e: self.load_reports())
-        
-        # Filter frame
-        filter_frame = tk.Frame(search_frame, bg='white')
-        filter_frame.pack(side='right')
-        
-        tk.Label(filter_frame, text="Filter by:", font=('Arial', 11),
-                bg='white').pack(side='left', padx=(20, 10))
-        
-        self.filter_var = tk.StringVar(value="All")
-        ttk.Combobox(filter_frame, textvariable=self.filter_var,
-                    values=["All", "Today", "This Week", "This Month"],
-                    state='readonly', width=15).pack(side='left')
-        
         # Table Frame
         table_frame = tk.Frame(self.parent, bg='white')
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
-        # Scrollbars
-        y_scroll = tk.Scrollbar(table_frame, orient='vertical')
-        y_scroll.pack(side='right', fill='y')
+        columns = ('Report ID', 'Patient', 'Test', 'Result', 'Date', 'Remarks')
+        self.tree = ttk.Treeview(table_frame, columns=columns, show='headings')
         
-        columns = ('Report ID', 'Patient', 'Test Type', 'Result', 'Date', 'Status', 'Remarks')
-        self.tree = ttk.Treeview(table_frame, columns=columns, show='headings',
-                                yscrollcommand=y_scroll.set)
-        
-        y_scroll.config(command=self.tree.yview)
-        
-        # Column widths and headings
-        widths = [100, 150, 150, 150, 100, 100, 200]
-        for col, width in zip(columns, widths):
+        for col in columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=width, anchor='center')
+            self.tree.column(col, width=120, anchor='center')
         
         self.tree.pack(fill='both', expand=True)
         
-        # Bind events
         self.tree.bind('<Double-1>', self.view_report)
-        self.tree.bind('<Button-3>', self.show_context_menu)
     
-    def add_report(self):
-        """Create new lab report"""
+    def load_reports(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        reports = self.data_manager.get_lab_reports()
+        
+        for report in reports:
+            self.tree.insert('', 'end', values=(
+                report['id'],
+                report['patient_name'],
+                report['test'],
+                report['result'],
+                report['date'],
+                report.get('remarks', 'N/A')
+            ))
+    
+    def create_report(self):
         dialog = tk.Toplevel(self.parent)
-        dialog.title("New Lab Report")
-        dialog.geometry("700x800")
+        dialog.title("Create New Lab Report")
+        dialog.geometry("500x600")
         dialog.transient(self.parent)
         dialog.grab_set()
         
         # Center dialog
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (700 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (800 // 2)
-        dialog.geometry(f'700x800+{x}+{y}')
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f'500x600+{x}+{y}')
         
         form_frame = tk.Frame(dialog, padx=30, pady=20)
         form_frame.pack(fill='both', expand=True)
-        
-        tk.Label(form_frame, text="New Laboratory Report", 
-                font=('Arial', 16, 'bold')).pack(pady=20)
         
         # Report ID
         reports = self.data_manager.get_lab_reports()
         new_id = self.data_manager.generate_id('L', reports)
         
-        tk.Label(form_frame, text=f"Report ID: {new_id}", 
-                font=('Arial', 11, 'bold')).pack(pady=(0, 20))
+        tk.Label(form_frame, text=f"Report ID: {new_id}", font=('Arial', 11, 'bold')).grid(
+            row=0, column=0, columnspan=2, pady=(0, 20))
         
-        # Patient Selection
-        patient_frame = tk.Frame(form_frame)
-        patient_frame.pack(fill='x', pady=10)
-        
-        tk.Label(patient_frame, text="Patient:", 
-                font=('Arial', 11, 'bold')).pack(side='left')
+        # Patient selection
+        tk.Label(form_frame, text="Select Patient:", font=('Arial', 10)).grid(
+            row=1, column=0, sticky='w', pady=5)
         
         patients = self.data_manager.get_patients()
-        patient_list = [f"{p['id']} - {p['name']}" for p in patients]
-        
+        patient_names = [f"{p['id']} - {p['name']}" for p in patients]
         patient_var = tk.StringVar()
-        patient_combo = ttk.Combobox(patient_frame, textvariable=patient_var,
-                                   values=patient_list, font=('Arial', 11), width=40)
-        patient_combo.pack(side='left', padx=10)
+        patient_cb = ttk.Combobox(form_frame, textvariable=patient_var, values=patient_names, 
+                                state='readonly', font=('Arial', 10), width=30)
+        patient_cb.grid(row=1, column=1, pady=5, padx=(10, 0))
         
         # Test Type
-        test_frame = tk.Frame(form_frame)
-        test_frame.pack(fill='x', pady=10)
-        
-        tk.Label(test_frame, text="Test Type:", 
-                font=('Arial', 11, 'bold')).pack(side='left')
-        
-        test_types = [
-            "Complete Blood Count (CBC)",
-            "Blood Sugar Test",
-            "Lipid Profile",
-            "Liver Function Test",
-            "Kidney Function Test",
-            "Thyroid Function Test",
-            "Urine Analysis",
-            "COVID-19 Test",
-            "X-Ray",
-            "MRI Scan",
-            "CT Scan",
-            "Ultrasound",
-            "ECG",
-            "Other"
-        ]
+        tk.Label(form_frame, text="Test Type:", font=('Arial', 10)).grid(
+            row=2, column=0, sticky='w', pady=5)
         
         test_var = tk.StringVar()
-        test_combo = ttk.Combobox(test_frame, textvariable=test_var,
-                                values=test_types, font=('Arial', 11), width=40)
-        test_combo.pack(side='left', padx=10)
+        tests = ['Blood Test', 'Urine Test', 'X-Ray', 'MRI', 'CT Scan', 'Ultrasound']
+        test_cb = ttk.Combobox(form_frame, textvariable=test_var, values=tests,
+                              state='readonly', font=('Arial', 10), width=30)
+        test_cb.grid(row=2, column=1, pady=5, padx=(10, 0))
         
-        # Test Parameters
-        tk.Label(form_frame, text="Test Parameters:", 
-                font=('Arial', 11, 'bold')).pack(anchor='w', pady=(20,5))
-        
-        params_frame = tk.Frame(form_frame, relief='solid', bd=1)
-        params_frame.pack(fill='x', pady=5)
-        
-        self.param_entries = []
-        
-        def add_parameter():
-            param_row = tk.Frame(params_frame)
-            param_row.pack(fill='x', padx=5, pady=5)
-            
-            param_name = tk.Entry(param_row, font=('Arial', 11), width=20)
-            param_name.insert(0, "Parameter Name")
-            param_name.pack(side='left', padx=5)
-            
-            param_value = tk.Entry(param_row, font=('Arial', 11), width=20)
-            param_value.insert(0, "Value")
-            param_value.pack(side='left', padx=5)
-            
-            param_unit = tk.Entry(param_row, font=('Arial', 11), width=15)
-            param_unit.insert(0, "Unit")
-            param_unit.pack(side='left', padx=5)
-            
-            ref_range = tk.Entry(param_row, font=('Arial', 11), width=15)
-            ref_range.insert(0, "Reference Range")
-            ref_range.pack(side='left', padx=5)
-            
-            def clear_default(event, entry=param_name):
-                if entry.get() in ["Parameter Name", "Value", "Unit", "Reference Range"]:
-                    entry.delete(0, 'end')
-            
-            for entry in [param_name, param_value, param_unit, ref_range]:
-                entry.bind('<FocusIn>', lambda e, ent=entry: clear_default(e, ent))
-            
-            self.param_entries.append((param_name, param_value, param_unit, ref_range))
-        
-        tk.Button(form_frame, text="➕ Add Parameter", font=('Arial', 10),
-                 command=add_parameter).pack(pady=5)
-        
-        # Add initial parameter row
-        add_parameter()
-        
-        # Result Summary
-        tk.Label(form_frame, text="Result Summary:", 
-                font=('Arial', 11, 'bold')).pack(anchor='w', pady=(20,5))
+        # Result
+        tk.Label(form_frame, text="Result:", font=('Arial', 10)).grid(
+            row=3, column=0, sticky='w', pady=5)
         
         result_var = tk.StringVar()
-        for result in ["Normal", "Abnormal", "Inconclusive"]:
-            ttk.Radiobutton(form_frame, text=result, variable=result_var,
-                          value=result).pack(anchor='w')
+        results = ['Normal', 'Abnormal', 'Positive', 'Negative', 'Requires Further Testing']
+        result_cb = ttk.Combobox(form_frame, textvariable=result_var, values=results,
+                               state='readonly', font=('Arial', 10), width=30)
+        result_cb.grid(row=3, column=1, pady=5, padx=(10, 0))
         
         # Remarks
-        tk.Label(form_frame, text="Remarks/Interpretation:", 
-                font=('Arial', 11, 'bold')).pack(anchor='w', pady=(20,5))
+        tk.Label(form_frame, text="Remarks:", font=('Arial', 10)).grid(
+            row=4, column=0, sticky='w', pady=5)
         
-        remarks_text = tk.Text(form_frame, height=4, font=('Arial', 11))
-        remarks_text.pack(fill='x')
+        remarks_text = tk.Text(form_frame, font=('Arial', 10), width=30, height=5)
+        remarks_text.grid(row=4, column=1, pady=5, padx=(10, 0))
         
         def save_report():
-            if not patient_var.get() or not test_var.get():
-                messagebox.showerror("Error", "Patient and Test Type are required!")
+            if not patient_var.get() or not test_var.get() or not result_var.get():
+                messagebox.showerror("Error", "Please fill all required fields")
                 return
-            
-            # Collect parameters
-            parameters = []
-            for name, value, unit, ref_range in self.param_entries:
-                param_name = name.get()
-                param_value = value.get()
-                
-                if param_name != "Parameter Name" and param_value != "Value":
-                    parameters.append({
-                        'name': param_name,
-                        'value': param_value,
-                        'unit': unit.get() if unit.get() != "Unit" else "",
-                        'reference': ref_range.get() if ref_range.get() != "Reference Range" else ""
-                    })
             
             patient_id = patient_var.get().split(' - ')[0]
             patient_name = patient_var.get().split(' - ')[1]
@@ -2619,121 +2524,29 @@ class LabModule:
                 'patient_id': patient_id,
                 'patient_name': patient_name,
                 'test': test_var.get(),
-                'parameters': parameters,
-                'result': result_var.get() or "Not Specified",
+                'result': result_var.get(),
                 'remarks': remarks_text.get('1.0', 'end-1c'),
-                'date': datetime.now().strftime("%Y-%m-%d"),
-                'status': 'Completed'
+                'date': datetime.now().strftime("%Y-%m-%d")
             }
             
-            # Save report
             self.data_manager.add_lab_report(report_data)
-            
-            # Generate PDF
-            self.generate_report_pdf(report_data)
-            
-            messagebox.showinfo("Success", 
-                              f"Lab report created successfully!\n"
-                              f"Report ID: {new_id}")
+            messagebox.showinfo("Success", "Lab report created successfully!")
             dialog.destroy()
             self.load_reports()
         
         # Buttons
         btn_frame = tk.Frame(form_frame)
-        btn_frame.pack(pady=20)
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=20)
         
-        tk.Button(btn_frame, text="💾 Save & Generate PDF", font=('Arial', 11, 'bold'),
-                 bg='#2ecc71', fg='white', relief='flat', cursor='hand2',
-                 command=save_report, padx=20, pady=10).pack(side='left', padx=10)
+        tk.Button(btn_frame, text="Save Report", font=('Arial', 11, 'bold'),
+                 bg='#2ecc71', fg='white', command=save_report,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
         
-        tk.Button(btn_frame, text="❌ Cancel", font=('Arial', 11, 'bold'),
-                 bg='#e74c3c', fg='white', relief='flat', cursor='hand2',
-                 command=dialog.destroy, padx=20, pady=10).pack(side='left', padx=10)
-    
-    def generate_report_pdf(self, report_data):
-        """Generate PDF lab report"""
-        filename = f"{self.data_manager.data_dir}/lab_report_{report_data['id']}.pdf"
-        
-        doc = SimpleDocTemplate(filename, pagesize=letter,
-                              rightMargin=72, leftMargin=72,
-                              topMargin=72, bottomMargin=72)
-        
-        # Prepare story elements
-        story = []
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(name='Center', alignment=TA_CENTER))
-        
-        # Header
-        header_text = "LABORATORY TEST REPORT"
-        story.append(Paragraph(header_text, styles['Center']))
-        story.append(Spacer(1, 20))
-        
-        # Report info
-        info_data = [
-            ['Report ID:', report_data['id']],
-            ['Date:', report_data['date']],
-            ['Patient ID:', report_data['patient_id']],
-            ['Patient Name:', report_data['patient_name']],
-            ['Test Type:', report_data['test']]
-        ]
-        
-        info_table = Table(info_data, colWidths=[100, 400])
-        info_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        story.append(info_table)
-        story.append(Spacer(1, 20))
-        
-        # Parameters
-        story.append(Paragraph("Test Parameters", styles['Heading2']))
-        story.append(Spacer(1, 10))
-        
-        if report_data['parameters']:
-            param_data = [['Parameter', 'Value', 'Unit', 'Reference Range']]
-            for param in report_data['parameters']:
-                param_data.append([
-                    param['name'],
-                    param['value'],
-                    param['unit'],
-                    param['reference']
-                ])
-            
-            param_table = Table(param_data, colWidths=[150, 150, 100, 100])
-            param_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ]))
-            story.append(param_table)
-        else:
-            story.append(Paragraph("No parameters recorded", styles['Normal']))
-        
-        story.append(Spacer(1, 20))
-        
-        # Result
-        story.append(Paragraph("Result Summary", styles['Heading2']))
-        story.append(Spacer(1, 10))
-        story.append(Paragraph(report_data['result'], styles['Normal']))
-        story.append(Spacer(1, 20))
-        
-        # Remarks
-        if report_data['remarks']:
-            story.append(Paragraph("Remarks/Interpretation", styles['Heading2']))
-            story.append(Spacer(1, 10))
-            story.append(Paragraph(report_data['remarks'], styles['Normal']))
-        
-        # Build PDF
-        doc.build(story)
+        tk.Button(btn_frame, text="Cancel", font=('Arial', 11, 'bold'),
+                 bg='#e74c3c', fg='white', command=dialog.destroy,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
     
     def view_report(self, event):
-        """View lab report details"""
         selected = self.tree.selection()
         if not selected:
             return
@@ -2746,52 +2559,445 @@ class LabModule:
         
         if not report:
             return
-        # Show report details in a dialog (and allow opening PDF if available)
+        
         dialog = tk.Toplevel(self.parent)
-        dialog.title(f"Lab Report - {report['id']}")
-        dialog.geometry("700x600")
+        dialog.title(f"Lab Report - {report_id}")
+        dialog.geometry("500x400")
         dialog.transient(self.parent)
         dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f'500x400+{x}+{y}')
+        
+        # Content
+        content_frame = tk.Frame(dialog, padx=20, pady=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        # Header with report info
+        header_frame = tk.Frame(content_frame)
+        header_frame.pack(fill='x', pady=(0, 20))
+        
+        tk.Label(header_frame, text=f"Report ID: {report['id']}", 
+                font=('Arial', 12, 'bold')).pack(anchor='w')
+        tk.Label(header_frame, text=f"Date: {report['date']}", 
+                font=('Arial', 10)).pack(anchor='w')
+        tk.Label(header_frame, text=f"Patient: {report['patient_name']}", 
+                font=('Arial', 10)).pack(anchor='w')
+        
+        # Test details
+        test_frame = tk.Frame(content_frame)
+        test_frame.pack(fill='x', pady=10)
+        
+        tk.Label(test_frame, text="Test Type:", 
+                font=('Arial', 10, 'bold')).pack(side='left')
+        tk.Label(test_frame, text=report['test'], 
+                font=('Arial', 10)).pack(side='left', padx=(5, 0))
+        
+        # Result
+        result_frame = tk.Frame(content_frame)
+        result_frame.pack(fill='x', pady=10)
+        
+        tk.Label(result_frame, text="Result:", 
+                font=('Arial', 10, 'bold')).pack(side='left')
+        tk.Label(result_frame, text=report['result'], 
+                font=('Arial', 10)).pack(side='left', padx=(5, 0))
+        
+        # Remarks
+        if report.get('remarks'):
+            remarks_frame = tk.Frame(content_frame)
+            remarks_frame.pack(fill='x', pady=10)
+            
+            tk.Label(remarks_frame, text="Remarks:", 
+                    font=('Arial', 10, 'bold')).pack(anchor='w')
+            tk.Label(remarks_frame, text=report['remarks'], 
+                    font=('Arial', 10), wraplength=450).pack(anchor='w', pady=(5, 0))
+        
+        # Close button
+        tk.Button(content_frame, text="Close", font=('Arial', 10),
+                 command=dialog.destroy, width=10).pack(pady=20)
 
-        header = tk.Frame(dialog, bg='#3498db')
-        header.pack(fill='x')
-        tk.Label(header, text=f"Report: {report['id']}", font=('Arial', 14, 'bold'), bg='#3498db', fg='white').pack(pady=8)
-
-        info_frame = tk.Frame(dialog, padx=20, pady=10)
-        info_frame.pack(fill='x')
-        tk.Label(info_frame, text=f"Patient: {report.get('patient_name')} ({report.get('patient_id')})", font=('Arial', 11)).pack(anchor='w')
-        tk.Label(info_frame, text=f"Test: {report.get('test')}", font=('Arial', 11)).pack(anchor='w')
-        tk.Label(info_frame, text=f"Date: {report.get('date')}", font=('Arial', 11)).pack(anchor='w')
-        tk.Label(info_frame, text=f"Result: {report.get('result', 'N/A')}", font=('Arial', 11)).pack(anchor='w')
-
-        # Parameters table
-        params_frame = tk.Frame(dialog, padx=20, pady=10)
-        params_frame.pack(fill='both', expand=True)
-        tk.Label(params_frame, text="Parameters:", font=('Arial', 12, 'bold')).pack(anchor='w')
-
-        params = report.get('parameters', [])
-        if params:
-            for p in params:
-                tk.Label(params_frame, text=f"- {p.get('name')}: {p.get('value')} {p.get('unit', '')} (Ref: {p.get('reference', '')})", font=('Arial', 11), anchor='w').pack(fill='x')
+class BillReportsModule:
+    """Bill Reports Management Module for viewing and managing billing reports"""
+    
+    def __init__(self, parent, data_manager, user):
+        self.parent = parent
+        self.data_manager = data_manager
+        self.user = user
+        self.create_widgets()
+        self.load_reports()
+    
+    def create_widgets(self):
+        title_frame = tk.Frame(self.parent, bg='white')
+        title_frame.pack(fill='x', padx=20, pady=20)
+        
+        tk.Label(title_frame, text="� Billing Reports", font=('Arial', 20, 'bold'),
+                bg='white', fg='#2c3e50').pack(side='left')
+        
+        # Action Buttons
+        btn_frame = tk.Frame(title_frame, bg='white')
+        btn_frame.pack(side='right')
+        
+        tk.Button(btn_frame, text="🔄 Refresh", font=('Arial', 10, 'bold'),
+                 bg='#3498db', fg='white', relief='flat', cursor='hand2',
+                 command=self.load_reports, padx=15, pady=8).pack(side='left', padx=5)
+                 
+        tk.Button(btn_frame, text="📊 Analytics", font=('Arial', 10, 'bold'),
+                 bg='#2ecc71', fg='white', relief='flat', cursor='hand2',
+                 command=self.show_analytics, padx=15, pady=8).pack(side='left', padx=5)
+        
+        # Patient Selection
+        select_frame = tk.Frame(self.parent, bg='white')
+        select_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(select_frame, text="Select Patient:", font=('Arial', 11),
+                bg='white').pack(side='left', padx=(0,10))
+        
+        patients = self.data_manager.get_patients()
+        patient_names = ["All Patients"] + [f"{p['id']} - {p['name']}" for p in patients]
+        self.patient_var = tk.StringVar(value="All Patients")
+        patient_cb = ttk.Combobox(select_frame, textvariable=self.patient_var, values=patient_names,
+                                 state='readonly', font=('Arial', 10), width=40)
+        patient_cb.pack(side='left')
+        patient_cb.bind('<<ComboboxSelected>>', lambda e: self.load_reports())
+        
+        # Date Filter
+        filter_frame = tk.Frame(select_frame, bg='white')
+        filter_frame.pack(side='right')
+        
+        tk.Label(filter_frame, text="Filter by:", font=('Arial', 11),
+                bg='white').pack(side='left', padx=(20, 10))
+        
+        self.filter_var = tk.StringVar(value="All")
+        ttk.Combobox(filter_frame, textvariable=self.filter_var,
+                    values=["All", "Today", "This Week", "This Month", "Custom Range"],
+                    state='readonly', width=15).pack(side='left')
+        self.filter_var.trace('w', lambda *args: self.handle_filter_change())
+        
+        # Add Summary Cards
+        summary_frame = tk.Frame(self.parent, bg='white')
+        summary_frame.pack(fill='x', padx=20, pady=10)
+        
+        # Total Bills Card
+        total_card = tk.Frame(summary_frame, bg='#3498db', padx=15, pady=10)
+        total_card.pack(side='left', padx=5, fill='x', expand=True)
+        self.total_bills_label = tk.Label(total_card, text="0", 
+                                        font=('Arial', 20, 'bold'), fg='white', bg='#3498db')
+        self.total_bills_label.pack()
+        tk.Label(total_card, text="Total Bills", font=('Arial', 10),
+                fg='white', bg='#3498db').pack()
+        
+        # Total Amount Card
+        amount_card = tk.Frame(summary_frame, bg='#2ecc71', padx=15, pady=10)
+        amount_card.pack(side='left', padx=5, fill='x', expand=True)
+        self.total_amount_label = tk.Label(amount_card, text="₹0.00", 
+                                         font=('Arial', 20, 'bold'), fg='white', bg='#2ecc71')
+        self.total_amount_label.pack()
+        tk.Label(amount_card, text="Total Amount", font=('Arial', 10),
+                fg='white', bg='#2ecc71').pack()
+        
+        # Pending Amount Card
+        pending_card = tk.Frame(summary_frame, bg='#e74c3c', padx=15, pady=10)
+        pending_card.pack(side='left', padx=5, fill='x', expand=True)
+        self.pending_amount_label = tk.Label(pending_card, text="₹0.00", 
+                                           font=('Arial', 20, 'bold'), fg='white', bg='#e74c3c')
+        self.pending_amount_label.pack()
+        tk.Label(pending_card, text="Pending Amount", font=('Arial', 10),
+                fg='white', bg='#e74c3c').pack()
+        
+        # Table Frame
+        table_frame = tk.Frame(self.parent, bg='white')
+        table_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient='vertical')
+        scrollbar.pack(side='right', fill='y')
+        
+        columns = ('Bill No', 'Patient', 'Date', 'Services', 'Amount', 'Payment Method', 'Status')
+        self.tree = ttk.Treeview(table_frame, columns=columns, show='headings',
+                                yscrollcommand=scrollbar.set)
+        
+        scrollbar.config(command=self.tree.yview)
+        
+        # Column widths and headings
+        widths = [100, 150, 100, 200, 100, 120, 100]
+        for col, width in zip(columns, widths):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=width, anchor='center')
+        
+        self.tree.pack(fill='both', expand=True)
+        
+        self.tree.bind('<Double-1>', self.view_bill)
+        self.tree.bind('<Button-3>', self.show_context_menu)
+    
+    def handle_filter_change(self):
+        """Handle date filter changes"""
+        if self.filter_var.get() == "Custom Range":
+            self.show_date_range_dialog()
         else:
-            tk.Label(params_frame, text="No parameters recorded", font=('Arial', 11)).pack(anchor='w')
-
-        # Remarks / Interpretation
-        remarks_frame = tk.Frame(dialog, padx=20, pady=10)
-        remarks_frame.pack(fill='x')
-        tk.Label(remarks_frame, text="Remarks / Interpretation:", font=('Arial', 12, 'bold')).pack(anchor='w')
-        remarks_text = tk.Text(remarks_frame, height=6, font=('Arial', 11))
-        remarks_text.pack(fill='x')
-        remarks_text.insert('1.0', report.get('remarks', ''))
-        remarks_text.config(state='disabled')
-
-        # Open PDF button if available
-        pdf_path = os.path.join(self.data_manager.data_dir, f"lab_report_{report_id}.pdf")
-        btn_frame = tk.Frame(dialog, pady=10)
-        btn_frame.pack()
-        if os.path.exists(pdf_path):
-            tk.Button(btn_frame, text="Open PDF", command=lambda: os.startfile(pdf_path), bg='#3498db', fg='white').pack(side='left', padx=10)
-        tk.Button(btn_frame, text="Close", command=dialog.destroy).pack(side='left', padx=10)
+            self.load_reports()
+            
+    def show_date_range_dialog(self):
+        """Show dialog for custom date range selection"""
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Select Date Range")
+        dialog.geometry("300x250")
+        dialog.transient(self.parent)
+        
+        content_frame = tk.Frame(dialog, padx=20, pady=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        # Start date
+        tk.Label(content_frame, text="Start Date (YYYY-MM-DD):", 
+                font=('Arial', 11)).pack(anchor='w')
+        start_date = tk.Entry(content_frame, width=30)
+        start_date.pack(fill='x', pady=(5, 15))
+        start_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        
+        # End date
+        tk.Label(content_frame, text="End Date (YYYY-MM-DD):", 
+                font=('Arial', 11)).pack(anchor='w')
+        end_date = tk.Entry(content_frame, width=30)
+        end_date.pack(fill='x', pady=(5, 15))
+        end_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        
+        def apply_filter():
+            self.custom_date_range = (start_date.get(), end_date.get())
+            self.load_reports()
+            dialog.destroy()
+        
+        # Apply button
+        tk.Button(content_frame, text="Apply Filter", font=('Arial', 11, 'bold'),
+                 bg='#3498db', fg='white', command=apply_filter,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(pady=20)
+    
+    def update_summary(self, bills):
+        """Update summary cards with current filtered data"""
+        total_bills = len(bills)
+        total_amount = sum(float(b['total']) for b in bills)
+        pending_amount = sum(float(b['total']) for b in bills 
+                           if b['status'].upper() != 'PAID')
+        
+        self.total_bills_label.config(text=str(total_bills))
+        self.total_amount_label.config(text=f"₹{total_amount:,.2f}")
+        self.pending_amount_label.config(text=f"₹{pending_amount:,.2f}")
+    
+    def load_reports(self):
+        """Load and filter bill reports"""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        bills = self.data_manager.get_bills()
+        
+        # Apply patient filter
+        selected_patient = self.patient_var.get()
+        if selected_patient != "All Patients":
+            patient_id = selected_patient.split(' - ')[0]
+            bills = [b for b in bills if b['patient_id'] == patient_id]
+        
+        # Apply date filter
+        filter_option = self.filter_var.get()
+        if filter_option != "All":
+            today = datetime.now()
+            if filter_option == "Today":
+                bills = [b for b in bills if b['date'] == today.strftime("%Y-%m-%d")]
+            elif filter_option == "This Week":
+                week_ago = today - timedelta(days=7)
+                bills = [b for b in bills if datetime.strptime(b['date'], "%Y-%m-%d") >= week_ago]
+            elif filter_option == "This Month":
+                month_ago = today - timedelta(days=30)
+                bills = [b for b in bills if datetime.strptime(b['date'], "%Y-%m-%d") >= month_ago]
+            elif filter_option == "Custom Range" and hasattr(self, 'custom_date_range'):
+                start_date, end_date = self.custom_date_range
+                bills = [b for b in bills if start_date <= b['date'] <= end_date]
+        
+        for bill in bills:
+            self.tree.insert('', 'end', values=(
+                bill['bill_no'],
+                bill['patient_name'],
+                bill['date'],
+                bill['services'],
+                f"₹{bill['total']:.2f}",
+                bill['payment_method'],
+                bill['status']
+            ))
+    
+    def view_bill(self, event):
+        """View bill details with enhanced payment features"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+        
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        bills = self.data_manager.get_bills()
+        bill = next((b for b in bills if b['bill_no'] == bill_no), None)
+        
+        if not bill:
+            return
+        
+        dialog = tk.Toplevel(self.parent)
+        dialog.title(f"Bill Details - {bill_no}")
+        dialog.geometry("700x600")
+        dialog.transient(self.parent)
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (700 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f'700x600+{x}+{y}')
+        
+        # Header
+        header = tk.Frame(dialog, bg='#2ecc71', height=80)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text=f"Bill #{bill['bill_no']}", font=('Arial', 16, 'bold'),
+                bg='#2ecc71', fg='white').pack(pady=(10, 5))
+        tk.Label(header, text=f"Date: {bill['date']}", font=('Arial', 10),
+                bg='#2ecc71', fg='white').pack()
+        
+        # Create notebook for tabs
+        notebook = ttk.Notebook(dialog)
+        notebook.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        # Details tab
+        details_frame = ttk.Frame(notebook)
+        notebook.add(details_frame, text="Bill Details")
+        
+        details = [
+            ('Patient Name', bill['patient_name']),
+            ('Patient ID', bill['patient_id']),
+            ('Services', bill['services']),
+            ('Payment Method', bill['payment_method']),
+            ('Status', bill['status']),
+            ('Subtotal', f"₹{bill['subtotal']:.2f}"),
+            ('Tax (10%)', f"₹{bill['tax']:.2f}"),
+            ('Total Amount', f"₹{bill['total']:.2f}")
+        ]
+        
+        for i, (label, value) in enumerate(details):
+            tk.Label(details_frame, text=f"{label}:", font=('Arial', 11, 'bold')).grid(
+                row=i, column=0, sticky='w', pady=10, padx=20)
+            tk.Label(details_frame, text=str(value), font=('Arial', 11)).grid(
+                row=i, column=1, sticky='w', padx=20, pady=10)
+        
+        # Payment tab
+        payment_frame = ttk.Frame(notebook)
+        notebook.add(payment_frame, text="Payment Management")
+        
+        # Payment status frame
+        status_frame = tk.LabelFrame(payment_frame, text="Payment Status", padx=20, pady=10)
+        status_frame.pack(fill='x', padx=20, pady=10)
+        
+        status_color = '#2ecc71' if bill['status'].upper() == 'PAID' else '#e74c3c'
+        tk.Label(status_frame, text=f"Current Status: {bill['status']}", 
+                font=('Arial', 12, 'bold'), fg=status_color).pack(pady=5)
+        
+        # Payment amount frame
+        amount_frame = tk.LabelFrame(payment_frame, text="Payment Amount", padx=20, pady=10)
+        amount_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(amount_frame, text=f"Total Amount Due: ₹{bill['total']:.2f}", 
+                font=('Arial', 12, 'bold')).pack(pady=5)
+        
+        if bill['status'].upper() != 'PAID':
+            # Payment method frame
+            method_frame = tk.LabelFrame(payment_frame, text="Update Payment", padx=20, pady=10)
+            method_frame.pack(fill='x', padx=20, pady=10)
+            
+            # Payment method selection
+            tk.Label(method_frame, text="Select Payment Method:", 
+                    font=('Arial', 11)).pack(anchor='w')
+            payment_method = tk.StringVar(value=bill['payment_method'])
+            methods = ['Cash', 'Credit Card', 'Debit Card', 'UPI', 'Net Banking', 'Insurance']
+            method_cb = ttk.Combobox(method_frame, textvariable=payment_method, 
+                                   values=methods, state='readonly', width=30)
+            method_cb.pack(pady=5, anchor='w')
+            
+            # Transaction details
+            tk.Label(method_frame, text="Transaction ID:", 
+                    font=('Arial', 11)).pack(anchor='w', pady=(10,0))
+            transaction_id = tk.Entry(method_frame, width=32)
+            transaction_id.pack(pady=5, anchor='w')
+            
+            tk.Label(method_frame, text="Additional Notes:", 
+                    font=('Arial', 11)).pack(anchor='w', pady=(10,0))
+            notes = tk.Text(method_frame, height=3, width=40)
+            notes.pack(pady=5, anchor='w')
+            
+            # Mark as paid button
+            def mark_as_paid():
+                if not transaction_id.get().strip():
+                    messagebox.showerror("Error", "Please enter transaction ID")
+                    return
+                    
+                bill['status'] = 'PAID'
+                bill['payment_method'] = payment_method.get()
+                bill['transaction_id'] = transaction_id.get()
+                bill['payment_date'] = datetime.now().strftime("%Y-%m-%d")
+                bill['payment_notes'] = notes.get('1.0', 'end-1c')
+                
+                # Update bill in data manager
+                self.data_manager.update_bill(bill)
+                self.load_reports()
+                
+                messagebox.showinfo("Success", "Payment recorded successfully!")
+                dialog.destroy()
+            
+            tk.Button(method_frame, text="✓ Mark as Paid", font=('Arial', 11, 'bold'),
+                     bg='#2ecc71', fg='white', command=mark_as_paid,
+                     relief='flat', cursor='hand2', padx=20, pady=10).pack(pady=20)
+        
+        else:
+            # Payment details frame for paid bills
+            paid_frame = tk.LabelFrame(payment_frame, text="Payment Details", padx=20, pady=10)
+            paid_frame.pack(fill='x', padx=20, pady=10)
+            
+            paid_details = [
+                ('Payment Date', bill.get('payment_date', '')),
+                ('Transaction ID', bill.get('transaction_id', '')),
+                ('Payment Method', bill['payment_method']),
+                ('Notes', bill.get('payment_notes', ''))
+            ]
+            
+            for i, (label, value) in enumerate(paid_details):
+                tk.Label(paid_frame, text=f"{label}:", 
+                        font=('Arial', 11, 'bold')).pack(anchor='w', pady=(10 if i > 0 else 0))
+                tk.Label(paid_frame, text=str(value), 
+                        font=('Arial', 11)).pack(anchor='w', pady=5)
+        
+        # Actions Frame at the bottom
+        actions_frame = tk.Frame(dialog)
+        actions_frame.pack(fill='x', padx=20, pady=20)
+        
+        # Left side buttons
+        left_btn_frame = tk.Frame(actions_frame)
+        left_btn_frame.pack(side='left')
+        
+        tk.Button(left_btn_frame, text="🖨️ Print Bill", font=('Arial', 11, 'bold'),
+                 bg='#3498db', fg='white', command=lambda: self.generate_bill_pdf(bill),
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
+        
+        tk.Button(left_btn_frame, text="📧 Email Bill", font=('Arial', 11, 'bold'),
+                 bg='#27ae60', fg='white', command=lambda: self.email_bill(bill),
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
+        
+        # Right side buttons
+        right_btn_frame = tk.Frame(actions_frame)
+        right_btn_frame.pack(side='right')
+        
+        if bill['status'].upper() != 'PAID':
+            tk.Button(right_btn_frame, text="� Quick Pay", font=('Arial', 11, 'bold'),
+                     bg='#2ecc71', fg='white', command=lambda: self.quick_pay(bill, dialog),
+                     relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
+        
+        tk.Button(right_btn_frame, text="❌ Close", font=('Arial', 11, 'bold'),
+                 bg='#95a5a6', fg='white', command=dialog.destroy,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
     
     def show_context_menu(self, event):
         """Show right-click context menu"""
@@ -2799,65 +3005,819 @@ class LabModule:
         if item:
             self.tree.selection_set(item)
             
+            # Get bill status
+            bill_values = self.tree.item(item)['values']
+            bill_status = bill_values[6] if len(bill_values) > 6 else ''
+            
             menu = tk.Menu(self.parent, tearoff=0)
-            menu.add_command(label="👁️ View Report",
-                           command=lambda: self.view_report(None))
+            menu.add_command(label="👁️ View Bill Details",
+                           command=lambda: self.view_bill(None))
+            
+            # Add payment related options based on status
+            if bill_status.upper() != 'PAID':
+                menu.add_command(label="💳 Quick Pay",
+                               command=lambda: self.quick_pay_selected())
+                menu.add_command(label="📝 Update Payment Status",
+                               command=lambda: self.update_payment_status())
+            
             menu.add_separator()
-            menu.add_command(label="📋 Copy Report ID",
-                           command=lambda: self.copy_report_id())
+            menu.add_command(label="🖨️ Print Bill",
+                           command=lambda: self.print_selected_bill())
+            menu.add_command(label="📧 Email Bill",
+                           command=lambda: self.email_selected_bill())
+            menu.add_command(label="📋 Copy Bill No",
+                           command=self.copy_bill_no)
+            
+            # Add admin options if user has privileges
+            if hasattr(self.user, 'is_admin') and self.user.is_admin:
+                menu.add_separator()
+                menu.add_command(label="🗑️ Delete Bill",
+                               command=lambda: self.delete_bill())
             
             menu.post(event.x_root, event.y_root)
     
-    def copy_report_id(self):
-        """Copy selected report ID to clipboard"""
+    def quick_pay_selected(self):
+        """Open quick pay for selected bill"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+        
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        bills = self.data_manager.get_bills()
+        bill = next((b for b in bills if b['bill_no'] == bill_no), None)
+        
+        if bill:
+            self.quick_pay(bill, None)
+    
+    def update_payment_status(self):
+        """Update payment status for selected bill"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+        
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        bills = self.data_manager.get_bills()
+        bill = next((b for b in bills if b['bill_no'] == bill_no), None)
+        
+        if not bill:
+            return
+            
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Update Payment Status")
+        dialog.geometry("400x300")
+        dialog.transient(self.parent)
+        
+        content_frame = tk.Frame(dialog, padx=20, pady=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        # Status selection
+        tk.Label(content_frame, text="Select Status:", 
+                font=('Arial', 11)).pack(anchor='w')
+        status_var = tk.StringVar(value=bill['status'])
+        statuses = ['Pending', 'Paid', 'Partially Paid', 'Cancelled']
+        status_cb = ttk.Combobox(content_frame, textvariable=status_var,
+                               values=statuses, state='readonly')
+        status_cb.pack(fill='x', pady=(5, 15))
+        
+        # Payment method
+        tk.Label(content_frame, text="Payment Method:", 
+                font=('Arial', 11)).pack(anchor='w')
+        method_var = tk.StringVar(value=bill['payment_method'])
+        methods = ['Cash', 'Credit Card', 'Debit Card', 'UPI', 'Net Banking', 'Insurance']
+        method_cb = ttk.Combobox(content_frame, textvariable=method_var,
+                               values=methods, state='readonly')
+        method_cb.pack(fill='x', pady=(5, 15))
+        
+        # Notes
+        tk.Label(content_frame, text="Notes:", 
+                font=('Arial', 11)).pack(anchor='w')
+        notes_text = tk.Text(content_frame, height=4)
+        notes_text.pack(fill='x', pady=(5, 15))
+        
+        def update_status():
+            bill['status'] = status_var.get()
+            bill['payment_method'] = method_var.get()
+            bill['payment_notes'] = notes_text.get('1.0', 'end-1c')
+            if status_var.get().upper() == 'PAID':
+                bill['payment_date'] = datetime.now().strftime("%Y-%m-%d")
+            
+            self.data_manager.update_bill(bill)
+            self.load_reports()
+            dialog.destroy()
+            messagebox.showinfo("Success", "Payment status updated successfully!")
+        
+        # Update button
+        tk.Button(content_frame, text="Update Status", font=('Arial', 11, 'bold'),
+                 bg='#3498db', fg='white', command=update_status,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(pady=20)
+    
+    def print_selected_bill(self):
+        """Print the selected bill"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+            
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        bills = self.data_manager.get_bills()
+        bill = next((b for b in bills if b['bill_no'] == bill_no), None)
+        
+        if bill:
+            self.generate_bill_pdf(bill)
+    
+    def email_selected_bill(self):
+        """Email the selected bill"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+            
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        bills = self.data_manager.get_bills()
+        bill = next((b for b in bills if b['bill_no'] == bill_no), None)
+        
+        if bill:
+            self.email_bill(bill)
+    
+    def delete_bill(self):
+        """Delete the selected bill (admin only)"""
+        if not (hasattr(self.user, 'is_admin') and self.user.is_admin):
+            messagebox.showerror("Error", "You don't have permission to delete bills")
+            return
+            
+        selected = self.tree.selection()
+        if not selected:
+            return
+            
+        if not messagebox.askyesno("Confirm Delete", 
+                                  "Are you sure you want to delete this bill?"):
+            return
+            
+        item = self.tree.item(selected[0])
+        bill_no = item['values'][0]
+        
+        self.data_manager.delete_bill(bill_no)
+        self.load_reports()
+        messagebox.showinfo("Success", "Bill deleted successfully!")
+    
+    def show_analytics(self):
+        """Show billing analytics in a new window"""
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Billing Analytics")
+        dialog.geometry("800x600")
+        dialog.transient(self.parent)
+        
+        # Notebook for different analytics views
+        notebook = ttk.Notebook(dialog)
+        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Revenue Trends
+        revenue_frame = ttk.Frame(notebook)
+        notebook.add(revenue_frame, text="Revenue Trends")
+        self.create_revenue_chart(revenue_frame)
+        
+        # Payment Methods
+        payment_frame = ttk.Frame(notebook)
+        notebook.add(payment_frame, text="Payment Methods")
+        self.create_payment_methods_chart(payment_frame)
+        
+        # Status Overview
+        status_frame = ttk.Frame(notebook)
+        notebook.add(status_frame, text="Status Overview")
+        self.create_status_overview(status_frame)
+        
+        # Bills by Month
+        monthly_frame = ttk.Frame(notebook)
+        notebook.add(monthly_frame, text="Monthly Analysis")
+        self.create_monthly_analysis(monthly_frame)
+    
+    def create_revenue_chart(self, parent):
+        """Create revenue trends chart"""
+        bills = self.data_manager.get_bills()
+        
+        # Group bills by date
+        dates = {}
+        for bill in bills:
+            date = datetime.strptime(bill['date'], "%Y-%m-%d")
+            if date not in dates:
+                dates[date] = 0
+            dates[date] += float(bill['total'])
+        
+        # Sort dates and prepare data
+        sorted_dates = sorted(dates.keys())
+        revenues = [dates[date] for date in sorted_dates]
+        
+        # Create figure and plot
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(sorted_dates, revenues, marker='o')
+        ax.set_title('Daily Revenue Trend')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Revenue (₹)')
+        ax.grid(True)
+        
+        # Rotate date labels for better readability
+        plt.xticks(rotation=45)
+        
+        # Add the plot to the frame
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Add summary statistics
+        stats_frame = tk.Frame(parent)
+        stats_frame.pack(fill='x', padx=10, pady=10)
+        
+        stats = [
+            ('Total Revenue', f"₹{sum(revenues):,.2f}"),
+            ('Average Daily Revenue', f"₹{sum(revenues)/len(revenues):,.2f}"),
+            ('Highest Daily Revenue', f"₹{max(revenues):,.2f}"),
+            ('Lowest Daily Revenue', f"₹{min(revenues):,.2f}")
+        ]
+        
+        for i, (label, value) in enumerate(stats):
+            tk.Label(stats_frame, text=f"{label}:", font=('Arial', 11, 'bold')).grid(
+                row=i//2, column=i%2*2, sticky='e', padx=5, pady=5)
+            tk.Label(stats_frame, text=value, font=('Arial', 11)).grid(
+                row=i//2, column=i%2*2+1, sticky='w', padx=5, pady=5)
+    
+    def create_payment_methods_chart(self, parent):
+        """Create payment methods distribution chart"""
+        bills = self.data_manager.get_bills()
+        
+        # Count payment methods
+        methods = {}
+        for bill in bills:
+            method = bill['payment_method']
+            if method not in methods:
+                methods[method] = 0
+            methods[method] += 1
+        
+        # Create pie chart
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        
+        # Payment method count
+        labels = list(methods.keys())
+        sizes = list(methods.values())
+        ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
+        ax1.set_title('Payment Methods Distribution')
+        
+        # Payment method by amount
+        method_amounts = {}
+        for bill in bills:
+            method = bill['payment_method']
+            if method not in method_amounts:
+                method_amounts[method] = 0
+            method_amounts[method] += float(bill['total'])
+        
+        labels = list(method_amounts.keys())
+        sizes = list(method_amounts.values())
+        ax2.pie(sizes, labels=labels, autopct='%1.1f%%')
+        ax2.set_title('Payment Methods by Amount')
+        
+        # Add the plot to the frame
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Add statistics
+        stats_frame = tk.Frame(parent)
+        stats_frame.pack(fill='x', padx=10, pady=10)
+        
+        for method in methods:
+            tk.Label(stats_frame, text=f"{method}:", font=('Arial', 11, 'bold')).pack(
+                side='left', padx=10)
+            tk.Label(stats_frame, text=f"₹{method_amounts[method]:,.2f}", 
+                    font=('Arial', 11)).pack(side='left', padx=5)
+    
+    def create_status_overview(self, parent):
+        """Create payment status overview"""
+        bills = self.data_manager.get_bills()
+        
+        # Group by status
+        status_counts = {}
+        status_amounts = {}
+        for bill in bills:
+            status = bill['status'].upper()
+            if status not in status_counts:
+                status_counts[status] = 0
+                status_amounts[status] = 0
+            status_counts[status] += 1
+            status_amounts[status] += float(bill['total'])
+        
+        # Create bar chart
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        
+        # Status count
+        status_labels = list(status_counts.keys())
+        counts = list(status_counts.values())
+        ax1.bar(status_labels, counts)
+        ax1.set_title('Bills by Status')
+        ax1.set_ylabel('Number of Bills')
+        
+        # Status amounts
+        amounts = list(status_amounts.values())
+        ax2.bar(status_labels, amounts)
+        ax2.set_title('Amount by Status')
+        ax2.set_ylabel('Amount (₹)')
+        
+        # Rotate labels for better readability
+        ax1.tick_params(axis='x', rotation=45)
+        ax2.tick_params(axis='x', rotation=45)
+        
+        # Add the plot to the frame
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+    
+    def create_monthly_analysis(self, parent):
+        """Create monthly bills analysis"""
+        bills = self.data_manager.get_bills()
+        
+        # Group by month
+        monthly_data = {}
+        for bill in bills:
+            date = datetime.strptime(bill['date'], "%Y-%m-%d")
+            month_key = date.strftime("%Y-%m")
+            if month_key not in monthly_data:
+                monthly_data[month_key] = {
+                    'count': 0,
+                    'amount': 0,
+                    'paid': 0,
+                    'pending': 0
+                }
+            
+            monthly_data[month_key]['count'] += 1
+            amount = float(bill['total'])
+            monthly_data[month_key]['amount'] += amount
+            
+            if bill['status'].upper() == 'PAID':
+                monthly_data[month_key]['paid'] += amount
+            else:
+                monthly_data[month_key]['pending'] += amount
+        
+        # Create visualization
+        fig, ax = plt.subplots(figsize=(10, 4))
+        
+        months = list(monthly_data.keys())
+        paid_amounts = [monthly_data[m]['paid'] for m in months]
+        pending_amounts = [monthly_data[m]['pending'] for m in months]
+        
+        # Create stacked bar chart
+        ax.bar(months, paid_amounts, label='Paid')
+        ax.bar(months, pending_amounts, bottom=paid_amounts, label='Pending')
+        
+        ax.set_title('Monthly Revenue Analysis')
+        ax.set_xlabel('Month')
+        ax.set_ylabel('Amount (₹)')
+        ax.legend()
+        
+        # Rotate labels for better readability
+        plt.xticks(rotation=45)
+        
+        # Add the plot to the frame
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+    
+    def copy_bill_no(self):
+        """Copy selected bill number to clipboard"""
         selected = self.tree.selection()
         if selected:
-            report_id = self.tree.item(selected[0])['values'][0]
+            bill_no = self.tree.item(selected[0])['values'][0]
             self.parent.clipboard_clear()
-            self.parent.clipboard_append(report_id)
+            self.parent.clipboard_append(bill_no)
+            
+    def email_bill(self, bill):
+        """Email bill to patient"""
+        # First generate the PDF
+        pdf_path = self.generate_bill_pdf(bill)
+        
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Email Bill")
+        dialog.geometry("400x300")
+        dialog.transient(self.parent)
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (300 // 2)
+        dialog.geometry(f'400x300+{x}+{y}')
+        
+        content_frame = tk.Frame(dialog, padx=20, pady=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        # Email form
+        tk.Label(content_frame, text="Recipient Email:", 
+                font=('Arial', 11)).pack(anchor='w')
+        email_entry = tk.Entry(content_frame, width=40)
+        email_entry.pack(fill='x', pady=(5, 15))
+        
+        tk.Label(content_frame, text="Subject:", 
+                font=('Arial', 11)).pack(anchor='w')
+        subject_entry = tk.Entry(content_frame, width=40)
+        subject_entry.insert(0, f"Bill Statement - {bill['bill_no']}")
+        subject_entry.pack(fill='x', pady=(5, 15))
+        
+        tk.Label(content_frame, text="Message:", 
+                font=('Arial', 11)).pack(anchor='w')
+        message_text = tk.Text(content_frame, height=5)
+        default_msg = f"Dear {bill['patient_name']},\n\nPlease find attached your bill statement ({bill['bill_no']}).\n\nRegards,\nSmart Hospital"
+        message_text.insert('1.0', default_msg)
+        message_text.pack(fill='x', pady=(5, 15))
+        
+        def send_email():
+            # Here you would implement actual email sending logic
+            # For now, just show a success message
+            messagebox.showinfo("Success", "Bill has been sent successfully!")
+            dialog.destroy()
+        
+        # Send button
+        tk.Button(content_frame, text="📧 Send Email", font=('Arial', 11, 'bold'),
+                 bg='#27ae60', fg='white', command=send_email,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(pady=20)
     
-    def search_reports(self):
-        """Search reports by patient name or test type"""
-        search_term = self.search_var.get().lower()
-        filter_option = self.filter_var.get()
+    def quick_pay(self, bill, parent_dialog):
+        """Quick payment processing"""
+        dialog = tk.Toplevel(self.parent)
+        dialog.title("Quick Payment")
+        dialog.geometry("500x400")
+        dialog.transient(self.parent)
         
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f'500x400+{x}+{y}')
         
-        reports = self.data_manager.get_lab_reports()
+        # Header
+        header = tk.Frame(dialog, bg='#2ecc71', height=80)
+        header.pack(fill='x')
+        header.pack_propagate(False)
         
-        # Apply date filter
-        if filter_option != "All":
-            today = datetime.now()
-            if filter_option == "Today":
-                reports = [r for r in reports if r['date'] == today.strftime("%Y-%m-%d")]
-            elif filter_option == "This Week":
-                week_ago = today - timedelta(days=7)
-                reports = [r for r in reports if datetime.strptime(r['date'], "%Y-%m-%d") >= week_ago]
-            elif filter_option == "This Month":
-                month_ago = today - timedelta(days=30)
-                reports = [r for r in reports if datetime.strptime(r['date'], "%Y-%m-%d") >= month_ago]
+        tk.Label(header, text="Quick Payment", font=('Arial', 16, 'bold'),
+                bg='#2ecc71', fg='white').pack(pady=(10, 5))
+        tk.Label(header, text=f"Amount: ₹{bill['total']:.2f}", font=('Arial', 12),
+                bg='#2ecc71', fg='white').pack()
         
-        # Apply search filter
-        for report in reports:
-            if (search_term in report['patient_name'].lower() or
-                search_term in report['test'].lower()):
-                self.tree.insert('', 'end', values=(
-                    report['id'],
-                    report['patient_name'],
-                    report['test'],
-                    report.get('result', 'N/A'),
-                    report['date'],
-                    report.get('status', 'Completed'),
-                    report.get('remarks', '')[:50] + '...' if report.get('remarks', '') else ''
-                ))
+        content_frame = tk.Frame(dialog, padx=30, pady=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        # Payment method
+        tk.Label(content_frame, text="Select Payment Method:", 
+                font=('Arial', 11, 'bold')).pack(anchor='w')
+        payment_method = tk.StringVar(value='UPI')
+        methods = ['UPI', 'Credit Card', 'Debit Card', 'Net Banking']
+        
+        for method in methods:
+            tk.Radiobutton(content_frame, text=method, variable=payment_method,
+                         value=method, font=('Arial', 10)).pack(anchor='w', pady=5)
+        
+        # Transaction frame
+        transaction_frame = tk.LabelFrame(content_frame, text="Transaction Details",
+                                        padx=20, pady=10)
+        transaction_frame.pack(fill='x', pady=15)
+        
+        tk.Label(transaction_frame, text="Transaction ID:", 
+                font=('Arial', 10)).pack(anchor='w')
+        transaction_id = tk.Entry(transaction_frame, width=40)
+        transaction_id.pack(fill='x', pady=5)
+        
+        def process_payment():
+            if not transaction_id.get().strip():
+                messagebox.showerror("Error", "Please enter transaction ID")
+                return
+                
+            # Update bill status
+            # Update bill in-memory (not yet saved)
+            bill['_pending_payment'] = {
+                'status': 'PAID',
+                'payment_method': payment_method.get(),
+                'transaction_id': transaction_id.get(),
+                'payment_date': datetime.now().strftime("%Y-%m-%d")
+            }
+            # Enable Save button
+            save_btn.config(state='normal')
+            messagebox.showinfo("Processed", "Payment processed locally. Click Save to persist the payment.")
+        
+        # Process payment button
+        # Action buttons: Process -> Save -> Print
+        action_frame = tk.Frame(content_frame)
+        action_frame.pack(pady=20)
+
+        process_button = tk.Button(action_frame, text="💳 Process", font=('Arial', 11, 'bold'),
+                 bg='#f39c12', fg='white', command=process_payment,
+                 relief='flat', cursor='hand2', padx=20, pady=10)
+        process_button.pack(side='left', padx=5)
+
+        def save_payment():
+            pending = bill.get('_pending_payment')
+            if not pending:
+                messagebox.showerror("Error", "No processed payment to save. Click Process first.")
+                return
+            # Apply pending payment fields to bill and persist
+            bill['status'] = f"PAID"
+            bill['payment_method'] = pending.get('payment_method')
+            bill['transaction_id'] = pending.get('transaction_id')
+            bill['payment_date'] = pending.get('payment_date')
+            # Remove pending marker
+            if '_pending_payment' in bill:
+                del bill['_pending_payment']
+
+            # Persist
+            self.data_manager.update_bill(bill)
+            self.load_reports()
+            messagebox.showinfo("Saved", "Payment saved successfully.")
+            # Enable print button
+            print_btn.config(state='normal')
+            save_btn.config(state='disabled')
+            # Close parent dialog if requested
+            # Do not auto-close so user can print/email
+
+        save_btn = tk.Button(action_frame, text="💾 Save", font=('Arial', 11, 'bold'),
+                 bg='#2ecc71', fg='white', command=save_payment,
+                 relief='flat', cursor='hand2', padx=20, pady=10)
+        save_btn.pack(side='left', padx=5)
+        save_btn.config(state='disabled')
+
+        def print_bill():
+            # Generate PDF (or regenerate) and open it
+            pdf_path = self.generate_bill_pdf(bill)
+            try:
+                if os.name == 'nt':
+                    os.startfile(pdf_path)
+                else:
+                    # Try xdg-open / open
+                    import subprocess
+                    opener = 'xdg-open' if os.name == 'posix' else 'open'
+                    subprocess.Popen([opener, pdf_path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Unable to open PDF: {e}")
+
+        print_btn = tk.Button(action_frame, text="🖨️ Print", font=('Arial', 11, 'bold'),
+                 bg='#3498db', fg='white', command=print_bill,
+                 relief='flat', cursor='hand2', padx=20, pady=10)
+        print_btn.pack(side='left', padx=5)
+        print_btn.config(state='disabled')
+            
+    def generate_bill_pdf(self, bill_data):
+        """Generate PDF bill with QR code and enhanced features"""
+        # Get downloads folder path based on OS
+        if os.name == 'nt':  # Windows
+            downloads_path = os.path.expanduser('~\\Downloads')
+        else:  # Unix/Linux/Mac
+            downloads_path = os.path.expanduser('~/Downloads')
+            
+        filename = os.path.join(downloads_path, f"bill_{bill_data['bill_no']}.pdf")
+        
+        # Use SimpleDocTemplate for better formatting
+        doc = SimpleDocTemplate(filename, pagesize=letter,
+                              rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=72)
+        
+        # Prepare story elements
+        story = []
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(name='Center', alignment=TA_CENTER))
+        styles.add(ParagraphStyle(name='Right', alignment=TA_RIGHT))
+        styles.add(ParagraphStyle(name='Watermark', textColor=colors.lightgrey))
+        
+        # Create header with logo (if available)
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'logo.png')
+            if os.path.exists(logo_path):
+                img = Image(logo_path)
+                img.drawHeight = 1.5*inch
+                img.drawWidth = 1.5*inch
+                story.append(img)
+        except:
+            pass
+        
+        # Create header
+        header_text = "SMART HOSPITAL"
+        story.append(Paragraph(header_text, styles['Center']))
+        story.append(Spacer(1, 12))
+        
+        # Hospital details
+        hospital_details = """123 Medical Center Drive<br/>
+                            Healthcare City, State 12345<br/>
+                            Phone: (555) 123-4567<br/>
+                            Email: info@smarthospital.com<br/>
+                            GST No: XXXXXXXXXXXX"""
+        story.append(Paragraph(hospital_details, styles['Center']))
+        story.append(Spacer(1, 20))
+        
+        # Bill header with status watermark
+        story.append(Paragraph("BILL STATEMENT", styles['Center']))
+        if bill_data['status'].upper() == 'PAID':
+            story.append(Paragraph("PAID", ParagraphStyle(
+                'Watermark',
+                parent=styles['Normal'],
+                fontSize=60,
+                textColor=colors.green,
+                alignment=TA_CENTER
+            )))
+        story.append(Spacer(1, 20))
+        
+        # Generate QR Code for bill verification
+        qr_data = f"Bill#{bill_data['bill_no']}|Date:{bill_data['date']}|Amount:₹{bill_data['total']}"
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        qr_path = os.path.join(downloads_path, f"temp_qr_{bill_data['bill_no']}.png")
+        qr_img.save(qr_path)
+        
+        # Bill and patient information with QR code
+        info_data = [
+            ['Bill No:', bill_data['bill_no'], Image(qr_path)],
+            ['Date:', bill_data['date'], ''],
+            ['Patient ID:', bill_data['patient_id'], ''],
+            ['Patient Name:', bill_data['patient_name'], ''],
+            ['Payment Method:', bill_data['payment_method'], ''],
+            ['Status:', bill_data['status'], '']
+        ]
+        
+        info_table = Table(info_data, colWidths=[120, 280, 100])
+        info_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('SPAN', (2, 0), (2, -1)),  # Span QR code across rows
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (1, -1), 1, colors.lightgrey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 20))
+        
+        # Services with prices
+        services = bill_data.get('service_details', [])
+        if not services:  # Fallback to old format if service_details not available
+            services = [{'name': s, 'amount': ''} for s in bill_data['services'].split(', ')]
+            
+        service_data = [['Service', 'Amount', 'Date']]
+        for service in services:
+            service_data.append([
+                service.get('name', ''),
+                f"₹{service.get('amount', '')}" if service.get('amount') else '',
+                service.get('date', '')
+            ])
+        
+        service_table = Table(service_data, colWidths=[300, 100, 100])
+        service_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (2, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(service_table)
+        story.append(Spacer(1, 20))
+        
+        # Payment details with additional information
+        payment_data = [
+            ['Subtotal:', f"₹{bill_data['subtotal']:.2f}"],
+            ['Tax (10%):', f"₹{bill_data['tax']:.2f}"],
+            ['Discount:', f"-₹{bill_data.get('discount', 0):.2f}"],
+            ['Total Amount:', f"₹{bill_data['total']:.2f}"]
+        ]
+        
+        # Add payment status details
+        if bill_data['status'].upper() == 'PAID':
+            payment_data.extend([
+                ['Payment Date:', bill_data.get('payment_date', '')],
+                ['Transaction ID:', bill_data.get('transaction_id', '')],
+                ['Payment Method:', bill_data['payment_method']]
+            ])
+        
+        payment_table = Table(payment_data, colWidths=[450, 50])
+        payment_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTSIZE', (0, -1), (-1, -1), 12),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LINEBELOW', (0, -4), (-1, -4), 1, colors.black),
+        ]))
+        story.append(payment_table)
+        story.append(Spacer(1, 30))
+        
+        # Terms and conditions
+        terms_text = """Terms & Conditions:<br/>
+                       1. All payments are non-refundable<br/>
+                       2. Please keep this bill for future reference<br/>
+                       3. Any disputes must be reported within 7 days"""
+        story.append(Paragraph(terms_text, styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Footer with payment instructions if unpaid
+        if bill_data['status'].upper() != 'PAID':
+            payment_instructions = """Payment Methods:<br/>
+                                   UPI: hospital@upi<br/>
+                                   Bank: XXXX Bank<br/>
+                                   A/C: XXXXXXXXXXXX<br/>
+                                   IFSC: XXXXX0000"""
+            story.append(Paragraph(payment_instructions, styles['Normal']))
+            story.append(Spacer(1, 20))
+        
+        # Footer text
+        footer_text = f"""Thank you for choosing Smart Hospital!<br/>
+                         For any queries, please contact our billing department.<br/>
+                         Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+        story.append(Paragraph(footer_text, styles['Center']))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Clean up temporary QR code file
+        try:
+            os.remove(qr_path)
+        except:
+            pass
+            
+        return filename
+
+        # Remarks / Interpretation
+        remarks_frame = tk.Frame(dialog, padx=20, pady=10)
+        remarks_frame.pack(fill='x')
+        tk.Label(remarks_frame, text="Remarks / Interpretation:", font=('Arial', 12, 'bold')).pack(anchor='w')
+        remarks_text = tk.Text(remarks_frame, height=6, font=('Arial', 11))
+        remarks_text.pack(fill='x')
+        remarks_text.insert('1.0', bill.get('remarks', ''))
+        remarks_text.config(state='disabled')
+
+        # Open PDF button if available
+        pdf_path = os.path.join(self.data_manager.data_dir, f"bill_{bill_no}.pdf")
+        btn_frame = tk.Frame(dialog, pady=10)
+        btn_frame.pack()
+        if os.path.exists(pdf_path):
+            tk.Button(btn_frame, text="�️ Print Bill", font=('Arial', 11, 'bold'),
+                     bg='#3498db', fg='white', command=lambda: os.startfile(pdf_path),
+                     relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
+        tk.Button(btn_frame, text="❌ Close", font=('Arial', 11, 'bold'),
+                 bg='#95a5a6', fg='white', command=dialog.destroy,
+                 relief='flat', cursor='hand2', padx=20, pady=10).pack(side='left', padx=5)
     
-    def load_reports(self):
-        """Load all lab reports"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+
         
-        reports = self.data_manager.get_lab_reports()
+        # Bill info
+        info_data = [
+            ['Bill No:', bill_data['bill_no']],
+            ['Date:', bill_data['date']],
+            ['Patient ID:', bill_data['patient_id']],
+            ['Patient Name:', bill_data['patient_name']],
+            ['Payment Method:', bill_data['payment_method']],
+            ['Status:', bill_data['status']]
+        ]
+        
+        info_table = Table(info_data, colWidths=[100, 400])
+        info_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 20))
+        
+        # Services
+        story.append(Paragraph("Services", styles['Heading2']))
+        story.append(Spacer(1, 10))
+        story.append(Paragraph(bill_data['services'], styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Amount details
+        amounts = [
+            ['Subtotal:', f"₹{bill_data['subtotal']:.2f}"],
+            ['Tax (10%):', f"₹{bill_data['tax']:.2f}"],
+            ['Total Amount:', f"₹{bill_data['total']:.2f}"]
+        ]
+        
+        amount_table = Table(amounts, colWidths=[100, 400])
+        amount_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
+            ('LINEBELOW', (0, -1), (-1, -1), 1, colors.black),
+        ]))
+        story.append(amount_table)
+        
+        # Build PDF
+        doc.build(story)
+        return filename
+
 
         # Apply patient filter if available
         patient_filter = 'All'
@@ -2883,7 +3843,7 @@ class LabModule:
         title_frame = tk.Frame(self.parent, bg='white')
         title_frame.pack(fill='x', padx=20, pady=20)
         
-        tk.Label(title_frame, text="LAB REPORT", font=('Arial', 20, 'bold'),
+        tk.Label(title_frame, text="BILLING MANAGEMENT", font=('Arial', 20, 'bold'),
                 bg='white', fg='#2c3e50').pack(side='left')
         
         btn_frame = tk.Frame(title_frame, bg='white')
@@ -2922,7 +3882,7 @@ class LabModule:
                 bill['bill_no'],
                 bill['patient_name'],
                 bill['services'],
-                f"${bill['total']:.2f}",
+                f"₹{bill['total']:.2f}",
                 bill['payment_method'],
                 bill['date'],
                 bill['status']
@@ -2966,18 +3926,18 @@ class LabModule:
         services_text.pack(pady=5)
         
         # Amount
-        tk.Label(form_frame, text="Subtotal Amount ($):", font=('Arial', 11)).pack(anchor='w', pady=(10, 5))
+        tk.Label(form_frame, text="Subtotal Amount (₹):", font=('Arial', 11)).pack(anchor='w', pady=(10, 5))
         subtotal_entry = tk.Entry(form_frame, font=('Arial', 11), width=20)
         subtotal_entry.pack(pady=5)
         
         # Tax (10%)
         tk.Label(form_frame, text="Tax (10%):", font=('Arial', 10)).pack(anchor='w', pady=(5, 0))
-        tax_label = tk.Label(form_frame, text="$0.00", font=('Arial', 11, 'bold'))
+        tax_label = tk.Label(form_frame, text="₹0.00", font=('Arial', 11, 'bold'))
         tax_label.pack(anchor='w', pady=2)
         
         # Total
         tk.Label(form_frame, text="Total Amount:", font=('Arial', 11, 'bold')).pack(anchor='w', pady=(5, 0))
-        total_label = tk.Label(form_frame, text="$0.00", font=('Arial', 14, 'bold'), fg='#2ecc71')
+        total_label = tk.Label(form_frame, text="₹0.00", font=('Arial', 14, 'bold'), fg='#2ecc71')
         total_label.pack(anchor='w', pady=2)
         
         def calculate_total(*args):
@@ -2985,11 +3945,11 @@ class LabModule:
                 subtotal = float(subtotal_entry.get())
                 tax = subtotal * 0.10
                 total = subtotal + tax
-                tax_label.config(text=f"${tax:.2f}")
-                total_label.config(text=f"${total:.2f}")
+                tax_label.config(text=f"₹{tax:.2f}")
+                total_label.config(text=f"₹{total:.2f}")
             except:
-                tax_label.config(text="$0.00")
-                total_label.config(text="$0.00")
+                tax_label.config(text="₹0.00")
+                total_label.config(text="₹0.00")
         
         subtotal_entry.bind('<KeyRelease>', calculate_total)
         
@@ -3050,44 +4010,129 @@ class LabModule:
             receipts_path = os.path.join(os.path.dirname(__file__), 'receipts')
             os.makedirs(receipts_path, exist_ok=True)
             
-            def finalize_payment():
-                bill_data['status'] = 'Paid'
-                self.data_manager.add_bill(bill_data)
-                
-                # Generate and save receipt PDF
-                receipt_file = os.path.join(receipts_path, f"receipt_{new_bill_no}.pdf")
+            def show_bill_and_confirm():
+                # First generate the bill
                 self.generate_bill_pdf(bill_data)
                 
-                # Save a copy to the receipts folder
+                # Get paths
                 if os.name == 'nt':  # Windows
                     downloads_path = os.path.expanduser('~\\Downloads')
                 else:  # Unix/Linux/Mac
                     downloads_path = os.path.expanduser('~/Downloads')
-                    
-                import shutil
-                shutil.copy2(os.path.join(downloads_path, f"bill_{bill_data['bill_no']}.pdf"), receipt_file)
                 
-                messagebox.showinfo("Success", f"Bill {new_bill_no} created successfully!\nReceipt saved to receipts folder")
-                dialog.destroy()
-                self.load_bills()
+                bill_path = os.path.join(downloads_path, f"bill_{bill_data['bill_no']}.pdf")
+                
+                # Show confirmation dialog with paid button
+                confirm_dialog = tk.Toplevel(dialog)
+                confirm_dialog.title("Confirm Payment")
+                confirm_dialog.geometry("300x150")
+                confirm_dialog.transient(dialog)
+                
+                tk.Label(confirm_dialog, 
+                        text=f"Bill generated and saved.\nTotal Amount: ₹{total:.2f}",
+                        font=('Arial', 12),
+                        justify='center').pack(pady=(20,10))
+                
+                def mark_as_paid():
+                    # Update status and save
+                    bill_data['status'] = f'PAID via {payment_method}'
+                    self.data_manager.add_bill(bill_data)
+                    
+                    # Copy to receipts folder
+                    receipt_file = os.path.join(receipts_path, f"receipt_{new_bill_no}.pdf")
+                    import shutil
+                    shutil.copy2(bill_path, receipt_file)
+                    
+                    messagebox.showinfo("Payment Complete", 
+                        f"Payment recorded successfully!\nStatus: {bill_data['status']}\nReceipt saved to receipts folder")
+                    confirm_dialog.destroy()
+                    dialog.destroy()
+                    self.load_bills()
+                
+                tk.Button(confirm_dialog, text="✔️ Mark as Paid",
+                         font=('Arial', 11, 'bold'),
+                         bg='#2ecc71', fg='white',
+                         command=mark_as_paid,
+                         padx=20, pady=10).pack(pady=20)
+                
+                # Center the dialog
+                confirm_dialog.update_idletasks()
+                x = dialog.winfo_x() + (dialog.winfo_width() // 2) - (confirm_dialog.winfo_width() // 2)
+                y = dialog.winfo_y() + (dialog.winfo_height() // 2) - (confirm_dialog.winfo_height() // 2)
+                confirm_dialog.geometry(f"+{x}+{y}")
+                confirm_dialog.grab_set()
             
             # Handle different payment methods
             if payment_method == 'Cash':
-                # For cash, directly show receipt
-                finalize_payment()
-            else:
-                # For card/other payments, show payment confirmation dialog
+                # For cash, show simple verification
                 payment_dialog = tk.Toplevel(dialog)
-                payment_dialog.title("Payment Confirmation")
-                payment_dialog.geometry("300x150")
+                payment_dialog.title("Cash Payment")
+                payment_dialog.geometry("300x200")
                 payment_dialog.transient(dialog)
                 
-                tk.Label(payment_dialog, text=f"Complete {payment_method} payment\nAmount: ₹{total:.2f}", 
-                        font=('Arial', 12), justify='center').pack(pady=20)
+                tk.Label(payment_dialog, text="Cash Payment",
+                        font=('Arial', 16, 'bold')).pack(pady=(20,10))
+                tk.Label(payment_dialog, text=f"Amount to Collect: ₹{total:.2f}",
+                        font=('Arial', 12)).pack(pady=5)
                 
-                tk.Button(payment_dialog, text="✔️ Done", font=('Arial', 11, 'bold'),
-                         bg='#2ecc71', fg='white', command=lambda: [payment_dialog.destroy(), finalize_payment()],
-                         padx=20, pady=10).pack()
+                tk.Button(payment_dialog, text="✔️ Cash Received",
+                         font=('Arial', 11, 'bold'),
+                         bg='#2ecc71', fg='white',
+                         command=lambda: [payment_dialog.destroy(), show_bill_and_confirm()],
+                         padx=20, pady=10).pack(pady=20)
+                
+                # Center dialog
+                payment_dialog.update_idletasks()
+                x = dialog.winfo_x() + (dialog.winfo_width() // 2) - (payment_dialog.winfo_width() // 2)
+                y = dialog.winfo_y() + (dialog.winfo_height() // 2) - (payment_dialog.winfo_height() // 2)
+                payment_dialog.geometry(f"+{x}+{y}")
+                payment_dialog.grab_set()
+            else:
+                # For card/other payments, show QR and payment confirmation dialog
+                payment_dialog = tk.Toplevel(dialog)
+                payment_dialog.title(f"{payment_method} Payment")
+                payment_dialog.geometry("400x600")
+                payment_dialog.transient(dialog)
+                
+                # Payment info
+                tk.Label(payment_dialog, text=f"{payment_method} Payment", 
+                        font=('Arial', 16, 'bold')).pack(pady=(20,10))
+                tk.Label(payment_dialog, text=f"Amount: ₹{total:.2f}", 
+                        font=('Arial', 14)).pack(pady=5)
+                tk.Label(payment_dialog, text=f"Bill No: {new_bill_no}", 
+                        font=('Arial', 12)).pack(pady=5)
+                
+                # Generate QR code for payment
+                qr = qrcode.QRCode(version=1, box_size=10, border=5)
+                qr_data = f"BILL:{new_bill_no}|AMOUNT:{total}|METHOD:{payment_method}"
+                qr.add_data(qr_data)
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="black", back_color="white")
+                
+                # Convert QR to PhotoImage
+                from PIL import ImageTk
+                qr_photo = ImageTk.PhotoImage(qr_img)
+                
+                # Display QR
+                qr_label = tk.Label(payment_dialog, image=qr_photo)
+                qr_label.image = qr_photo  # Keep reference
+                qr_label.pack(pady=20)
+                
+                # Payment Instructions
+                instructions = {
+                    'Credit Card': "1. Scan QR with bank app\n2. Enter card details\n3. Complete payment\n4. Click Done below",
+                    'Debit Card': "1. Scan QR with bank app\n2. Enter card details\n3. Complete payment\n4. Click Done below",
+                    'Insurance': "1. Scan QR for policy details\n2. Submit to insurance portal\n3. Wait for approval\n4. Click Done after approval",
+                    'Online Payment': "1. Scan QR with payment app\n2. Complete the transfer\n3. Save transaction ID\n4. Click Done below"
+                }
+                
+                tk.Label(payment_dialog, text=instructions.get(payment_method, "Scan QR to complete payment"),
+                        font=('Arial', 11), justify='left').pack(pady=20)
+                
+                # Done button
+                tk.Button(payment_dialog, text="✔️ Payment Complete", font=('Arial', 12, 'bold'),
+                         bg='#2ecc71', fg='white', command=lambda: [payment_dialog.destroy(), show_bill_and_confirm()],
+                         padx=20, pady=10).pack(pady=20)
                 
                 # Center the payment dialog
                 payment_dialog.update_idletasks()
@@ -3132,58 +4177,45 @@ class LabModule:
         
         # Hospital address
         address = """123 Medical Center Drive<br/>
-                    City, State 12345<br/>
+                    Healthcare City, State 12345<br/>
                     Phone: (555) 123-4567<br/>
                     Email: info@smarthospital.com"""
         story.append(Paragraph(address, styles['Center']))
         story.append(Spacer(1, 20))
         
-        # Invoice details
-        invoice_info = [
-            ['INVOICE', f"#{bill_data['bill_no']}"],
-            ['Date', bill_data['date']],
-            ['Status', bill_data['status']],
-        ]
-        t = Table(invoice_info, colWidths=[100, 150])
-        t.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ]))
-        story.append(t)
+        # Bill header
+        story.append(Paragraph("BILL STATEMENT", styles['Center']))
         story.append(Spacer(1, 20))
         
-        # Patient information
-        patient_info = [
-            ['Patient Information'],
-            ['Name:', bill_data['patient_name']],
-            ['ID:', bill_data['patient_id']],
+        # Bill and patient information
+        info_data = [
+            ['Bill No:', bill_data['bill_no']],
+            ['Date:', bill_data['date']],
+            ['Patient ID:', bill_data['patient_id']],
+            ['Patient Name:', bill_data['patient_name']],
+            ['Payment Method:', bill_data['payment_method']],
+            ['Status:', bill_data['status']]
         ]
-        t = Table(patient_info, colWidths=[100, 300])
-        t.setStyle(TableStyle([
-            ('SPAN', (0, 0), (1, 0)),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        
+        info_table = Table(info_data, colWidths=[120, 380])
+        info_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BACKGROUND', (0, 0), (1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (1, 0), colors.white),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
         ]))
-        story.append(t)
+        story.append(info_table)
         story.append(Spacer(1, 20))
         
         # Services
-        services_data = [['Services Description']]
-        services = bill_data['services'].split('\n')
+        services = bill_data['services'].split(', ')
+        service_data = [['Service', 'Amount']] + [[s, ''] for s in services]
         for service in services:
-            services_data.append([service])
-        
-        t = Table(services_data, colWidths=[400])
+            service_data.append([service, ''])
+
+        t = Table(service_data, colWidths=[300, 200])
         t.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
@@ -3391,7 +4423,7 @@ class AnalyticsModule:
             amounts = list(revenue_by_method.values())
             
             ax.bar(methods, amounts, color=['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6'])
-            ax.set_ylabel('Revenue ($)')
+            ax.set_ylabel('Revenue (₹)')
             ax.set_title('Revenue Distribution')
             ax.tick_params(axis='x', rotation=45)
         else:

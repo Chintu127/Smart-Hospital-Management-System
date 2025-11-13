@@ -705,7 +705,7 @@ class ReceptionistDashboard(DashboardBase):
         self.add_sidebar_button("📊 Dashboard", self.show_overview)
         self.add_sidebar_button("👥 Patients", self.show_patients)
         self.add_sidebar_button("📅 Appointments", self.show_appointments)
-        self.add_sidebar_button("💰 Billing", self.show_billing)
+        self.add_sidebar_button(" ₹ Billing", self.show_billing)
         self.add_sidebar_button("🏥 Room Management", self.show_room_management)
         self.add_sidebar_button("📈 Reports", self.show_reports)
         

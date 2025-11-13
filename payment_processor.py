@@ -277,4 +277,8 @@ class PaymentProcessor:
         self.callback(self.bill_data)
         
         messagebox.showinfo("Success", "Payment processed successfully!")
-        self.window.destroy()
+        # Close the payment window after showing confirmation
+        try:
+            self.window.destroy()
+        except Exception:
+            pass
